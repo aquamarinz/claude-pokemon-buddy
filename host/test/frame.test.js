@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderFrame } from "../src/render/frame.js";
+import { grayToBitmap, renderFrame } from "../src/render/frame.js";
 
 test("renderFrame returns 400x300 png and 1bpp bitmap", async () => {
   const model = {
@@ -40,3 +40,22 @@ test("renderFrame returns 400x300 png and 1bpp bitmap", async () => {
   assert.equal(bitmap.h, 300);
   assert.equal(bitmap.bytes.length, Math.ceil(400 / 8) * 300);
 });
+
+test("grayToBitmap hard-thresholds canvas gray without Bayer pattern", () => {
+  const bitmap = grayToBitmap(new Uint8Array(8 * 8).fill(216), 8, 8);
+
+  assert.equal(countOnPixels(bitmap, 0, 0, 8, 8), 0);
+});
+
+function countOnPixels(bitmap, x, y, w, h) {
+  const rowBytes = Math.ceil(bitmap.w / 8);
+  let count = 0;
+
+  for (let yy = y; yy < y + h; yy += 1) {
+    for (let xx = x; xx < x + w; xx += 1) {
+      count += (bitmap.bytes[yy * rowBytes + (xx >> 3)] >> (7 - (xx & 7))) & 1;
+    }
+  }
+
+  return count;
+}

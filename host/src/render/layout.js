@@ -1,6 +1,7 @@
 import { createCanvas } from "@napi-rs/canvas";
 
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
+import { ditherSpriteGray } from "./sprites.js";
 
 const MONO = '"Courier New", ui-monospace, monospace';
 const CJK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
@@ -9,6 +10,7 @@ export function drawGray(model) {
   const canvas = createCanvas(W, H);
   const g = canvas.getContext("2d");
 
+  g.imageSmoothingEnabled = false;
   g.fillStyle = PAPER;
   g.fillRect(0, 0, W, H);
   g.textBaseline = "alphabetic";
@@ -129,12 +131,13 @@ function drawSprite(g, spriteGray, { x, y, size }) {
   const side = Math.max(1, Math.round(Math.sqrt(pixels.length)));
   const srcW = side * side === pixels.length ? side : 96;
   const srcH = Math.max(1, Math.floor(pixels.length / srcW));
+  const dithered = ditherSpriteGray(pixels, srcW, srcH);
   const spriteCanvas = createCanvas(srcW, srcH);
   const sg = spriteCanvas.getContext("2d");
   const img = sg.createImageData(srcW, srcH);
 
   for (let i = 0; i < srcW * srcH; i += 1) {
-    const v = pixels[i] ?? 255;
+    const v = dithered[i] ?? 255;
     img.data[i * 4] = v;
     img.data[i * 4 + 1] = v;
     img.data[i * 4 + 2] = v;
@@ -144,7 +147,6 @@ function drawSprite(g, spriteGray, { x, y, size }) {
   sg.putImageData(img, 0, 0);
   g.imageSmoothingEnabled = false;
   g.drawImage(spriteCanvas, x, y, size, size);
-  g.imageSmoothingEnabled = true;
 }
 
 function placeholderSprite(w, h) {

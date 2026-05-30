@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
+import { ditherTo1bpp } from "./dither.js";
+
 const cache = new Map();
 
 export async function loadSpriteGray(path, { size = 96 } = {}) {
@@ -32,6 +34,30 @@ export function makePlaceholderSprite(size = 96) {
   }
 
   return { gray, w: size, h: size, placeholder: true };
+}
+
+export function ditherSpriteGray(gray, w, h, { transparentThreshold = 245 } = {}) {
+  if (!(gray instanceof Uint8Array) || gray.length !== w * h) {
+    throw new Error("sprite gray buffer size does not match dimensions");
+  }
+
+  const prepared = new Uint8Array(gray.length);
+  for (let i = 0; i < gray.length; i += 1) {
+    prepared[i] = gray[i] > transparentThreshold ? 255 : gray[i];
+  }
+
+  const bitmap = ditherTo1bpp(prepared, w, h);
+  const rowBytes = Math.ceil(w / 8);
+  const out = new Uint8Array(gray.length).fill(255);
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const on = (bitmap.bytes[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1;
+      if (on) out[y * w + x] = 0;
+    }
+  }
+
+  return out;
 }
 
 async function loadPngSprite(path, size) {
