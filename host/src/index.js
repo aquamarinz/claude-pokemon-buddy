@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,20 +10,8 @@ import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
 import { createMockTransport } from "./transport/mock.js";
-import { normalizeUsage } from "./usage.js";
+import { loadUsageSnapshot, usageForDisplay } from "./usage.js";
 import { makeWeather } from "./weather.js";
-
-const DEFAULT_USAGE = {
-  modelled: true,
-  p5h: 72,
-  pweek: 41,
-  resets5h: "resets in 2h 14m",
-  resetsWeek: "wk resets Jun 2, 09:00",
-  todayCost: 4.1,
-  todayTokens: 5_300_000,
-  weekTokens: 30_000_000,
-  perType: {},
-};
 
 const DEFAULT_WEATHER = {
   cond: "多云",
@@ -105,10 +93,12 @@ export async function main({
   intervalMs = Number(process.env.CPB_INTERVAL_MS ?? 60_000),
   statePath = "out/state.json",
   framePath = "out/frame.png",
+  usageRun,
 } = {}) {
   const config = loadConfig();
   const transport = createMockTransport({ framePath });
   const weatherClient = makeWeather();
+  let lastKnownUsage = null;
   let stopped = false;
   let timer = null;
 
@@ -121,7 +111,10 @@ export async function main({
   process.once("SIGTERM", stop);
 
   async function tick() {
-    const usage = loadUsageSnapshot(config);
+    const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
+    const selected = usageForDisplay(snapshot, lastKnownUsage);
+    lastKnownUsage = selected.lastKnown;
+    const usage = selected.usage;
     const weather = await loadWeatherSnapshot(weatherClient, config);
     const room = transport.feedSensor();
     await runOneTick({ usage, weather, room, statePath, framePath, mock: transport });
@@ -165,29 +158,10 @@ function ensurePet(state, today) {
   };
 }
 
-function loadUsageSnapshot(config) {
-  try {
-    const blocksJson = readFileSync(fixtureUrl("ccusage-blocks.json"), "utf8");
-    const dailyJson = readFileSync(fixtureUrl("ccusage-daily.json"), "utf8");
-    return normalizeUsage({
-      blocksJson,
-      dailyJson,
-      budget5h: config.planTokenBudget5h,
-      budgetWeek: config.planTokenBudgetWeek,
-    });
-  } catch {
-    return { ...DEFAULT_USAGE };
-  }
-}
-
 async function loadWeatherSnapshot(weatherClient, config) {
   const weather = await weatherClient.get(config.lat, config.lon);
   if (weather.temp == null || weather.cond === "—") return { ...DEFAULT_WEATHER, degraded: true };
   return weather;
-}
-
-function fixtureUrl(name) {
-  return new URL(`../test/fixtures/${name}`, import.meta.url);
 }
 
 function bondHearts(bond) {

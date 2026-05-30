@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { normalizeUsage } from "../src/usage.js";
+import { loadUsageSnapshot, normalizeUsage, usageForDisplay } from "../src/usage.js";
 
 const blocksJson = readFileSync(
   new URL("./fixtures/ccusage-blocks.json", import.meta.url),
@@ -70,4 +70,39 @@ test("normalizeUsage fail-closed on bad JSON or schema drift", () => {
       budgetWeek: 1,
     }),
   );
+});
+
+test("loadUsageSnapshot fail-closes when ccusage command fails", async () => {
+  const snapshot = await loadUsageSnapshot({
+    budget5h: 1,
+    budgetWeek: 1,
+    run: async () => {
+      throw new Error("ccusage unavailable");
+    },
+  });
+
+  assert.deepEqual(snapshot, { ok: false });
+});
+
+test("usageForDisplay keeps last-known usage stale instead of using fake defaults", () => {
+  const lastKnown = {
+    ok: true,
+    modelled: true,
+    p5h: 12,
+    pweek: 34,
+    resets5h: "2026-05-30T10:00:00Z",
+    todayTokens: 1234,
+    todayCost: 1.23,
+    weekTokens: 5678,
+    perType: {},
+  };
+
+  const { usage, lastKnown: nextLastKnown } = usageForDisplay({ ok: false }, lastKnown);
+
+  assert.equal(nextLastKnown, lastKnown);
+  assert.equal(usage.p5h, 12);
+  assert.equal(usage.todayTokens, 1234);
+  assert.equal(usage.stale, true);
+  assert.equal(usage.degraded, true);
+  assert.notEqual(usage.todayTokens, 5_300_000);
 });
