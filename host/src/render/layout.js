@@ -5,6 +5,7 @@ import { ditherSpriteGray } from "./sprites.js";
 
 const MONO = '"Courier New", ui-monospace, monospace';
 const CJK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -27,15 +28,16 @@ export function drawGray(model) {
 export function layoutText(model = {}) {
   const weather = model.weather ?? {};
   const weatherLabel = weather.degraded ? "degraded" : (weather.cond ?? "--");
+  const now = dateOrNow(model.now);
 
   return {
-    clock: formatClock(model.clock),
+    clock: formatClock(model.clock, now),
     p5h: percentText(model.p5h),
     pweek: percentText(model.pweek),
-    resets5h: formatReset(model.resets5h),
-    resetsWeek: formatReset(model.resetsWeek),
+    resets5h: formatReset(model.resets5h, now),
+    resetsWeek: formatReset(model.resetsWeek, now),
     today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
-    weatherMain: `${weatherLabel} ${value(weather.temp)}° · 风${value(weather.wind)}`,
+    weatherMain: `${weatherLabel} ${value(weather.temp)}°`,
     weatherFeels: `体感${value(weather.feels)}°`,
     weatherDetail: `最高${value(weather.hi)}° 最低${value(weather.lo)}° · 降水${value(weather.precip)}% · 风${value(weather.wind)}`,
   };
@@ -59,7 +61,7 @@ function drawLeftPanel(g, model) {
   g.font = `800 64px ${MONO}`;
   g.fillText(p5hText, 9, 88);
   if (p5hText !== "--") {
-    const pctX = 9 + g.measureText(p5hText).width - 2;
+    const pctX = Math.round(9 + g.measureText(p5hText).width - 2);
     g.font = `800 23px ${MONO}`;
     g.fillText("%", pctX, 87);
   }
@@ -84,13 +86,13 @@ function drawLeftPanel(g, model) {
   g.fillText(text.today, 11, 177);
 
   line(g, 10, 191, LEFT_W - 12, 191);
-  drawCloudIcon(g, 12, 202);
-  g.font = `800 14px ${CJK}`;
-  g.fillText(text.weatherMain, 42, 215);
+  drawWeatherIcon(g, weatherIconKind(model.weather), 13, 201);
+  g.font = `800 13px ${CJK}`;
+  g.fillText(text.weatherMain, 48, 214);
   g.font = `600 11px ${CJK}`;
-  g.fillText(text.weatherFeels, 110, 215);
+  g.fillText(text.weatherFeels, 48, 231);
   g.font = `600 10px ${CJK}`;
-  g.fillText(text.weatherDetail, 11, 233);
+  g.fillText(text.weatherDetail, 11, 248);
 
   line(g, 10, 257, LEFT_W - 12, 257);
   g.font = `700 12px ${CJK}`;
@@ -118,9 +120,10 @@ function drawBuddyPanel(g, model) {
 
   g.font = `800 12px ${MONO}`;
   const level = Math.max(1, Number(buddy.level ?? 1));
-  const hearts = heartString(buddy.bond ?? 0);
+  const hearts = heartCount(buddy.bond ?? 0);
   const streak = Math.max(0, Number(model.streak ?? 0));
-  g.fillText(`Lv.${level} ${hearts}`, panelX + 30, 251);
+  g.fillText(`Lv.${level}`, panelX + 30, 251);
+  drawHearts(g, panelX + 70, 239, hearts);
   drawFlame(g, panelX + 132, 239);
   g.fillText(`${streak}d`, panelX + 146, 251);
   drawMeter(g, panelX + 33, 260, 119, 8, clampPct(buddy.expPct ?? 0), { striped: false });
@@ -204,6 +207,39 @@ function drawShadow(g, cx, y) {
   g.fillStyle = INK;
 }
 
+function drawWeatherIcon(g, kind, x, y) {
+  if (kind === "sun") {
+    drawSunIcon(g, x, y);
+  } else if (kind === "rain") {
+    drawCloudIcon(g, x, y);
+    drawRainIcon(g, x, y);
+  } else if (kind === "snow") {
+    drawCloudIcon(g, x, y);
+    drawSnowIcon(g, x, y);
+  } else if (kind === "fog") {
+    drawFogIcon(g, x, y);
+  } else {
+    drawCloudIcon(g, x, y);
+  }
+}
+
+function drawSunIcon(g, x, y) {
+  g.fillStyle = INK;
+  g.strokeStyle = INK;
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(x + 15, y + 12, 7, 0, Math.PI * 2);
+  g.fill();
+  line(g, x + 15, y, x + 15, y + 4);
+  line(g, x + 15, y + 20, x + 15, y + 24);
+  line(g, x + 3, y + 12, x + 7, y + 12);
+  line(g, x + 23, y + 12, x + 27, y + 12);
+  line(g, x + 6, y + 3, x + 9, y + 6);
+  line(g, x + 21, y + 18, x + 24, y + 21);
+  line(g, x + 24, y + 3, x + 21, y + 6);
+  line(g, x + 9, y + 18, x + 6, y + 21);
+}
+
 function drawCloudIcon(g, x, y) {
   g.fillStyle = INK;
   g.beginPath();
@@ -214,6 +250,37 @@ function drawCloudIcon(g, x, y) {
   g.fill();
 }
 
+function drawRainIcon(g, x, y) {
+  g.strokeStyle = INK;
+  g.lineWidth = 2;
+  line(g, x + 9, y + 21, x + 7, y + 25);
+  line(g, x + 17, y + 21, x + 15, y + 25);
+  line(g, x + 25, y + 21, x + 23, y + 25);
+}
+
+function drawSnowIcon(g, x, y) {
+  g.strokeStyle = INK;
+  g.lineWidth = 1;
+  drawAsterisk(g, x + 10, y + 23);
+  drawAsterisk(g, x + 21, y + 23);
+  g.lineWidth = 2;
+}
+
+function drawFogIcon(g, x, y) {
+  g.strokeStyle = INK;
+  g.lineWidth = 2;
+  line(g, x + 4, y + 7, x + 28, y + 7);
+  line(g, x, y + 14, x + 24, y + 14);
+  line(g, x + 4, y + 21, x + 28, y + 21);
+}
+
+function drawAsterisk(g, x, y) {
+  line(g, x - 3, y, x + 3, y);
+  line(g, x, y - 3, x, y + 3);
+  line(g, x - 2, y - 2, x + 2, y + 2);
+  line(g, x + 2, y - 2, x - 2, y + 2);
+}
+
 function drawFlame(g, x, y) {
   g.fillStyle = INK;
   g.beginPath();
@@ -222,6 +289,33 @@ function drawFlame(g, x, y) {
   g.bezierCurveTo(x, y + 14, x - 1, y + 8, x + 4, y + 4);
   g.bezierCurveTo(x + 4, y + 8, x + 8, y + 8, x + 6, y);
   g.fill();
+}
+
+function drawHearts(g, x, y, filled) {
+  for (let i = 0; i < 5; i += 1) {
+    drawHeart(g, x + i * 11, y, i < filled);
+  }
+}
+
+function drawHeart(g, x, y, filled) {
+  g.beginPath();
+  g.moveTo(x + 5, y + 10);
+  g.bezierCurveTo(x, y + 6, x, y + 1, x + 4, y + 1);
+  g.bezierCurveTo(x + 6, y + 1, x + 7, y + 2, x + 8, y + 4);
+  g.bezierCurveTo(x + 9, y + 2, x + 10, y + 1, x + 12, y + 1);
+  g.bezierCurveTo(x + 16, y + 1, x + 16, y + 6, x + 11, y + 10);
+  g.lineTo(x + 8, y + 13);
+  g.closePath();
+
+  if (filled) {
+    g.fillStyle = INK;
+    g.fill();
+  } else {
+    g.strokeStyle = INK;
+    g.lineWidth = 1;
+    g.stroke();
+    g.lineWidth = 2;
+  }
 }
 
 function roundedRect(g, x, y, w, h, r) {
@@ -245,9 +339,8 @@ function line(g, x1, y1, x2, y2) {
   g.stroke();
 }
 
-function heartString(bond) {
-  const filled = Math.max(0, Math.min(5, Math.round(Number(bond) || 0)));
-  return `${"♥".repeat(filled)}${"♡".repeat(5 - filled)}`;
+function heartCount(bond) {
+  return Math.max(0, Math.min(5, Math.round(Number(bond) || 0)));
 }
 
 function tempHum(v) {
@@ -292,11 +385,61 @@ function percentText(v) {
   return String(Math.max(0, Math.min(100, Math.round(n))));
 }
 
-function formatClock(clock) {
+function formatClock(clock, now = new Date()) {
   if (typeof clock === "string" && clock.length > 0) return clock;
-  return "--:--";
+  return hhmm(now);
 }
 
-function formatReset(value) {
-  return typeof value === "string" && value.length > 0 ? value : "--";
+export function formatReset(value, now = new Date()) {
+  if (typeof value !== "string" || value.length === 0) return "reset unknown";
+  const reset = new Date(value);
+  const base = dateOrNow(now);
+  if (!Number.isFinite(reset.getTime())) return "reset unknown";
+
+  if (isSameLocalDate(reset, base)) {
+    const minutes = Math.max(0, Math.ceil((reset.getTime() - base.getTime()) / 60_000));
+    if (minutes <= 0) return "now";
+    if (minutes < 60) return `in ${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins === 0 ? `in ${hours}h` : `in ${hours}h${mins}m`;
+  }
+
+  if (isSameLocalDate(reset, addLocalDays(base, 1))) {
+    return `tomorrow ${hhmm(reset)}`;
+  }
+
+  return `${MONTHS[reset.getMonth()]} ${pad2(reset.getDate())}, ${hhmm(reset)}`;
+}
+
+export function weatherIconKind(weather = {}) {
+  const cond = String(weather?.cond ?? "");
+  if (/雪|snow/i.test(cond)) return "snow";
+  if (/雨|雷|rain|storm|shower/i.test(cond)) return "rain";
+  if (/雾|霾|fog|mist|haze/i.test(cond)) return "fog";
+  if (/晴|clear|sun/i.test(cond)) return "sun";
+  return "cloud";
+}
+
+function dateOrNow(value) {
+  const date = value instanceof Date ? value : new Date(value ?? Date.now());
+  return Number.isFinite(date.getTime()) ? date : new Date();
+}
+
+function isSameLocalDate(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function addLocalDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function hhmm(date) {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }

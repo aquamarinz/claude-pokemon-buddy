@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { layoutText } from "../src/render/layout.js";
+import { formatReset, layoutText, weatherIconKind } from "../src/render/layout.js";
 
 test("layout text includes wind in the weather detail row", () => {
   const text = layoutText({
@@ -26,8 +27,66 @@ test("layout text includes wind in the weather detail row", () => {
   assert.match(text.weatherDetail, /风11/);
 });
 
-test("layout text uses degraded and dashes instead of fake clock or reset data", () => {
+test("layout text formats clock and reset ISO values", () => {
+  const now = new Date(2026, 4, 30, 10, 0);
   const text = layoutText({
+    now,
+    resets5h: new Date(2026, 4, 30, 12, 14).toISOString(),
+    resetsWeek: new Date(2026, 5, 2, 15, 45).toISOString(),
+  });
+
+  assert.equal(text.clock, "10:00");
+  assert.equal(text.resets5h, "in 2h14m");
+  assert.equal(text.resetsWeek, "Jun 02, 15:45");
+  assert.doesNotMatch(text.resets5h, /2026-/);
+  assert.doesNotMatch(text.resetsWeek, /2026-/);
+});
+
+test("formatReset handles short, cross-day, later, and empty reset values", () => {
+  const now = new Date(2026, 4, 30, 10, 0);
+
+  assert.equal(formatReset(new Date(2026, 4, 30, 10, 42).toISOString(), now), "in 42m");
+  assert.equal(formatReset(new Date(2026, 4, 31, 0, 15).toISOString(), new Date(2026, 4, 30, 23, 30)), "tomorrow 00:15");
+  assert.equal(formatReset(new Date(2026, 5, 2, 15, 45).toISOString(), now), "Jun 02, 15:45");
+  assert.equal(formatReset(null, now), "reset unknown");
+});
+
+test("weather text keeps feels and wind mapped to the correct fields", () => {
+  const text = layoutText({
+    weather: {
+      cond: "雨",
+      temp: 19,
+      feels: 17,
+      hi: 22,
+      lo: 14,
+      precip: 30,
+      wind: 11,
+    },
+  });
+
+  assert.equal(text.weatherMain, "雨 19°");
+  assert.equal(text.weatherFeels, "体感17°");
+  assert.match(text.weatherDetail, /风11/);
+  assert.doesNotMatch(text.weatherMain, /风/);
+});
+
+test("weather icon kind follows the current condition", () => {
+  assert.equal(weatherIconKind({ cond: "晴" }), "sun");
+  assert.equal(weatherIconKind({ cond: "多云" }), "cloud");
+  assert.equal(weatherIconKind({ cond: "雨" }), "rain");
+  assert.equal(weatherIconKind({ cond: "雪" }), "snow");
+  assert.equal(weatherIconKind({ cond: "雾" }), "fog");
+});
+
+test("layout draws hearts without platform heart glyphs", () => {
+  const source = readFileSync(new URL("../src/render/layout.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /[♥♡]/);
+});
+
+test("layout text uses degraded labels instead of fake reset data", () => {
+  const text = layoutText({
+    now: new Date(2026, 4, 30, 9, 5),
     degraded: true,
     p5h: null,
     pweek: null,
@@ -38,11 +97,11 @@ test("layout text uses degraded and dashes instead of fake clock or reset data",
     weather: { degraded: true },
   });
 
-  assert.equal(text.clock, "--:--");
+  assert.equal(text.clock, "09:05");
   assert.equal(text.p5h, "--");
   assert.equal(text.pweek, "--");
-  assert.equal(text.resets5h, "--");
-  assert.equal(text.resetsWeek, "--");
+  assert.equal(text.resets5h, "reset unknown");
+  assert.equal(text.resetsWeek, "reset unknown");
   assert.equal(text.today, "today $-- · -- tok");
   assert.match(text.weatherMain, /degraded/);
   assert.match(text.weatherMain, /--°/);

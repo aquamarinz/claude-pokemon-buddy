@@ -34,6 +34,7 @@ test("normalizeUsage computes 5H%, WEEK%, and daily totals from real ccusage fix
   assert.equal(u.activeTokens, active.totalTokens);
   assert.equal(u.activeCost, active.costUSD);
   assert.equal(u.resets5h, active.endTime);
+  assert.equal(u.resetsWeek, "2026-06-01T00:00:00");
   assert.equal(u.todayPeriod, lastDaily.period);
   assert.equal(u.todayTokens, lastDaily.totalTokens);
   assert.equal(u.todayCost, lastDaily.totalCost);
