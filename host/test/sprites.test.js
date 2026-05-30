@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 
-import { ditherSpriteGray, loadSpriteGray } from "../src/render/sprites.js";
+import { ditherSpriteGray, loadBuddySprite, loadSpriteGray } from "../src/render/sprites.js";
 
 test("loadSpriteGray converts PNG to 96x96 grayscale", async (t) => {
   const dir = join("out", "test-sprites");
@@ -36,6 +36,15 @@ test("loadSpriteGray returns checkerboard placeholder when PNG is missing", asyn
   assert.equal(sprite.gray.length, 96 * 96);
   assert.ok(sprite.gray.some((v) => v === 0));
   assert.ok(sprite.gray.some((v) => v === 255));
+});
+
+test("loadBuddySprite loads the real Eevee asset", async () => {
+  const sprite = await loadBuddySprite("eevee");
+
+  assert.equal(sprite.placeholder, false);
+  assert.equal(sprite.w, 40);
+  assert.equal(sprite.h, 40);
+  assert.equal(sprite.gray.length, 40 * 40);
 });
 
 test("ditherSpriteGray keeps sprite midtones as a 1-bit Bayer pattern", () => {

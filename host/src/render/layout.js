@@ -1,11 +1,16 @@
 import { createCanvas } from "@napi-rs/canvas";
 
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
-import { ditherSpriteGray } from "./sprites.js";
+import { ditherSpriteGray, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
 const MONO = '"Courier New", ui-monospace, monospace';
 const CJK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const BUDDY_SPRITE_SLOT = 136;
+export const BUDDY_SPRITE_SCALE = 3;
+const TODAY_TEXT_X = 11;
+const TODAY_TEXT_MAX_X = LEFT_W - 12;
+const TODAY_FONT = { weight: 700, size: 13, minSize: 10, family: MONO };
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -82,8 +87,8 @@ function drawLeftPanel(g, model) {
 
   g.font = `700 11px ${MONO}`;
   g.fillText(text.resetsWeek, 11, 155);
-  g.font = `700 13px ${MONO}`;
-  g.fillText(text.today, 11, 177);
+  g.font = fitTodayLineFont(g, text.today);
+  g.fillText(text.today, TODAY_TEXT_X, 177);
 
   line(g, 10, 191, LEFT_W - 12, 191);
   drawWeatherIcon(g, weatherIconKind(model.weather), 13, 201);
@@ -108,9 +113,11 @@ function drawBuddyPanel(g, model) {
   drawBubble(g, panelX + 114, 13, buddy.bubble ?? "Pika!");
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
-    x: panelX + Math.floor((panelW - 136) / 2),
+    x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
     y: 60,
-    size: 136,
+    maxSize: BUDDY_SPRITE_SLOT,
+    srcW: buddy.spriteW,
+    srcH: buddy.spriteH,
   });
 
   g.fillStyle = INK;
@@ -129,18 +136,37 @@ function drawBuddyPanel(g, model) {
   drawMeter(g, panelX + 33, 260, 119, 8, clampPct(buddy.expPct ?? 0), { striped: false });
 }
 
-function drawSprite(g, spriteGray, { x, y, size }) {
+export function fitTodayLineFont(g, text) {
+  return fitFont(g, text, {
+    ...TODAY_FONT,
+    maxWidth: TODAY_TEXT_MAX_X - TODAY_TEXT_X,
+  });
+}
+
+export function drawSprite(g, spriteGray, {
+  x,
+  y,
+  maxSize = BUDDY_SPRITE_SLOT,
+  size,
+  srcW,
+  srcH,
+  scale = BUDDY_SPRITE_SCALE,
+  mode = "threshold",
+  threshold = SPRITE_CRISP_THRESHOLD,
+} = {}) {
   const pixels = spriteGray instanceof Uint8Array ? spriteGray : placeholderSprite(96, 96);
   const side = Math.max(1, Math.round(Math.sqrt(pixels.length)));
-  const srcW = side * side === pixels.length ? side : 96;
-  const srcH = Math.max(1, Math.floor(pixels.length / srcW));
-  const dithered = ditherSpriteGray(pixels, srcW, srcH);
-  const spriteCanvas = createCanvas(srcW, srcH);
+  const sourceW = Number.isInteger(srcW) && srcW > 0 ? srcW : (side * side === pixels.length ? side : 96);
+  const sourceH = Number.isInteger(srcH) && srcH > 0 ? srcH : Math.max(1, Math.floor(pixels.length / sourceW));
+  const rendered = mode === "dither"
+    ? ditherSpriteGray(pixels, sourceW, sourceH)
+    : thresholdSpriteGray(pixels, sourceW, sourceH, { threshold });
+  const spriteCanvas = createCanvas(sourceW, sourceH);
   const sg = spriteCanvas.getContext("2d");
-  const img = sg.createImageData(srcW, srcH);
+  const img = sg.createImageData(sourceW, sourceH);
 
-  for (let i = 0; i < srcW * srcH; i += 1) {
-    const v = dithered[i] ?? 255;
+  for (let i = 0; i < sourceW * sourceH; i += 1) {
+    const v = rendered[i] ?? 255;
     img.data[i * 4] = v;
     img.data[i * 4 + 1] = v;
     img.data[i * 4 + 2] = v;
@@ -148,8 +174,19 @@ function drawSprite(g, spriteGray, { x, y, size }) {
   }
 
   sg.putImageData(img, 0, 0);
+  const slot = Math.max(1, Math.floor(maxSize ?? size ?? Math.max(sourceW, sourceH)));
+  const integerScale = Math.max(1, Math.floor(scale));
+  const fitScale = Math.max(1, Math.min(integerScale, Math.floor(slot / Math.max(sourceW, sourceH)) || 1));
+  const targetW = sourceW * fitScale;
+  const targetH = sourceH * fitScale;
   g.imageSmoothingEnabled = false;
-  g.drawImage(spriteCanvas, x, y, size, size);
+  g.drawImage(
+    spriteCanvas,
+    x + Math.floor((slot - targetW) / 2),
+    y + Math.floor((slot - targetH) / 2),
+    targetW,
+    targetH,
+  );
 }
 
 function placeholderSprite(w, h) {
@@ -354,6 +391,8 @@ function tokens(v) {
   if (v == null) return "--";
   const n = Number(v);
   if (!Number.isFinite(n)) return "--";
+  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(Math.round(n));
@@ -362,7 +401,21 @@ function tokens(v) {
 function money(v) {
   if (v == null) return "--";
   const n = Number(v);
-  return Number.isFinite(n) ? n.toFixed(2) : "--";
+  if (!Number.isFinite(n)) return "--";
+  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toFixed(2);
+}
+
+function fitFont(g, text, { weight, size, minSize, family, maxWidth }) {
+  for (let px = size; px >= minSize; px -= 1) {
+    const font = `${weight} ${px}px ${family}`;
+    g.font = font;
+    if (g.measureText(text).width <= maxWidth) return font;
+  }
+  return `${weight} ${minSize}px ${family}`;
 }
 
 function value(v) {

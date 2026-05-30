@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createCanvas } from "@napi-rs/canvas";
 
-import { formatReset, layoutText, weatherIconKind } from "../src/render/layout.js";
+import { fitTodayLineFont, formatReset, layoutText, weatherIconKind } from "../src/render/layout.js";
+import { LEFT_W } from "../src/render/palette.js";
 
 test("layout text includes wind in the weather detail row", () => {
   const text = layoutText({
@@ -82,6 +84,18 @@ test("layout draws hearts without platform heart glyphs", () => {
   const source = readFileSync(new URL("../src/render/layout.js", import.meta.url), "utf8");
 
   assert.doesNotMatch(source, /[♥♡]/);
+});
+
+test("today usage line fits before the left panel divider", () => {
+  const text = layoutText({
+    todayCost: 598.35,
+    todayTokens: 400_600_000,
+  });
+  const g = createCanvas(400, 300).getContext("2d");
+
+  g.font = fitTodayLineFont(g, text.today);
+
+  assert.ok(g.measureText(text.today).width <= LEFT_W - 23);
 });
 
 test("layout text uses degraded labels instead of fake reset data", () => {

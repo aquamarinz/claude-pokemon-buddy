@@ -91,6 +91,8 @@ export async function runOneTick({
     },
     buddy: {
       spriteGray: sprite.gray,
+      spriteW: sprite.w,
+      spriteH: sprite.h,
       mood,
       level: pet.level,
       bond: bondHearts(pet.bond),
