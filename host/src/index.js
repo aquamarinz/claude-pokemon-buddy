@@ -9,7 +9,7 @@ import { resolveEvolution } from "./pet/evolution.js";
 import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
-import { createMockTransport } from "./transport/mock.js";
+import { createTransport } from "./transport/index.js";
 import { loadUsageSnapshot, usageForDisplay } from "./usage.js";
 import { makeWeather } from "./weather.js";
 
@@ -33,15 +33,17 @@ export async function runOneTick({
   now = new Date(),
   today = localYmd(now),
   mock,
+  transport,
+  transportFactory = createTransport,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
 
   mkdirSync(dirname(statePath), { recursive: true });
-  const transport = mock ?? createMockTransport({ framePath });
+  const activeTransport = transport ?? (mock ? adaptPngTransport(mock) : await transportFactory({ framePath }));
   const buttonEvents = [];
-  const offButtons = transport.onButton?.((event) => buttonEvents.push(event));
-  const sensor = room ?? transport.feedSensor();
+  const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
+  const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today);
   const closedUsageDays = new Set();
   if (
@@ -73,7 +75,7 @@ export async function runOneTick({
 
   const mood = deriveMood(usage);
   const sprite = await loadBuddySprite(pet.species);
-  const { pngBuffer } = await renderFrame({
+  const { pngBuffer, bitmap } = await renderFrame({
     ...usage,
     weather,
     room: sensor,
@@ -93,7 +95,7 @@ export async function runOneTick({
 
   saveState(statePath, pet);
   offButtons?.();
-  await transport.push(pngBuffer);
+  await activeTransport.push({ pngBuffer, bitmap });
 
   return pet;
 }
@@ -106,7 +108,7 @@ export async function main({
   usageRun,
 } = {}) {
   const config = loadConfig();
-  const transport = createMockTransport({ framePath });
+  const transport = await createTransport({ framePath });
   const weatherClient = makeWeather();
   let lastKnownUsage = null;
   let stopped = false;
@@ -127,7 +129,7 @@ export async function main({
     const usage = selected.usage;
     const weather = await loadWeatherSnapshot(weatherClient, config);
     const room = transport.feedSensor();
-    await runOneTick({ usage, weather, room, statePath, framePath, mock: transport });
+    await runOneTick({ usage, weather, room, statePath, framePath, transport });
     console.log(`wrote ${framePath}`);
   }
 
@@ -140,6 +142,15 @@ export async function main({
     });
     if (!stopped) await tick();
   }
+}
+
+function adaptPngTransport(transport) {
+  return {
+    ...transport,
+    async push(frame) {
+      return transport.push(frame?.pngBuffer ?? frame);
+    },
+  };
 }
 
 function ensurePet(state, today) {
