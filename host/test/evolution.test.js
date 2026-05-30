@@ -5,11 +5,13 @@ import { eligibleBranches, resolveEvolution } from "../src/pet/evolution.js";
 test("multiple eligible branches return candidates sorted by priority with no auto choice", () => {
   const cands = eligibleBranches("eevee", {
     bond: 170,
+    care: true,
     daytime: true,
     warmHumid: true,
   });
   const resolved = resolveEvolution("eevee", {
     bond: 170,
+    care: true,
     daytime: true,
     warmHumid: true,
   });
@@ -17,8 +19,9 @@ test("multiple eligible branches return candidates sorted by priority with no au
   assert.deepEqual(
     cands.map(({ to, priority }) => ({ to, priority })),
     [
-      { to: "leafeon", priority: 1 },
+      { to: "sylveon", priority: 1 },
       { to: "espeon", priority: 2 },
+      { to: "leafeon", priority: 3 },
     ],
   );
   assert.equal(resolved.auto, null);

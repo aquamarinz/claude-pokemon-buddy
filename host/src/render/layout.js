@@ -22,7 +22,25 @@ export function drawGray(model) {
   return g.getImageData(0, 0, W, H);
 }
 
+export function layoutText(model = {}) {
+  const weather = model.weather ?? {};
+  const weatherLabel = weather.degraded ? "degraded" : (weather.cond ?? "--");
+
+  return {
+    clock: formatClock(model.clock),
+    p5h: percentText(model.p5h),
+    pweek: percentText(model.pweek),
+    resets5h: formatReset(model.resets5h),
+    resetsWeek: formatReset(model.resetsWeek),
+    today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
+    weatherMain: `${weatherLabel} ${value(weather.temp)}° · 风${value(weather.wind)}`,
+    weatherFeels: `体感${value(weather.feels)}°`,
+    weatherDetail: `最高${value(weather.hi)}° 最低${value(weather.lo)}° · 降水${value(weather.precip)}% · 风${value(weather.wind)}`,
+  };
+}
+
 function drawLeftPanel(g, model) {
+  const text = layoutText(model);
   g.fillStyle = INK;
   g.fillRect(LEFT_W - 2, 0, 2, H);
 
@@ -30,50 +48,47 @@ function drawLeftPanel(g, model) {
   g.fillText("CLAUDE", 10, 23);
   g.font = `700 12px ${MONO}`;
   g.textAlign = "right";
-  g.fillText(formatClock(model.clock), LEFT_W - 12, 23);
+  g.fillText(text.clock, LEFT_W - 12, 23);
   g.textAlign = "left";
   line(g, 10, 33, LEFT_W - 12, 33);
 
   const p5h = clampPct(model.p5h);
-  const p5hText = String(p5h);
+  const p5hText = text.p5h;
   g.font = `800 64px ${MONO}`;
   g.fillText(p5hText, 9, 88);
-  const pctX = 9 + g.measureText(p5hText).width - 2;
-  g.font = `800 23px ${MONO}`;
-  g.fillText("%", pctX, 87);
+  if (p5hText !== "--") {
+    const pctX = 9 + g.measureText(p5hText).width - 2;
+    g.font = `800 23px ${MONO}`;
+    g.fillText("%", pctX, 87);
+  }
   g.font = `800 11px ${MONO}`;
   g.fillText("5H", 151, 58);
   g.fillText("WINDOW", 151, 72);
 
   g.font = `700 11px ${MONO}`;
-  g.fillText(formatReset(model.resets5h, "resets in 2h 14m"), 11, 110);
+  g.fillText(text.resets5h, 11, 110);
 
   g.font = `800 11px ${MONO}`;
   g.fillText("WEEK", 11, 135);
   drawMeter(g, 56, 124, 100, 14, clampPct(model.pweek), { striped: true });
   g.font = `800 14px ${MONO}`;
   g.textAlign = "right";
-  g.fillText(`${clampPct(model.pweek)}%`, LEFT_W - 12, 136);
+  g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 136);
   g.textAlign = "left";
 
   g.font = `700 11px ${MONO}`;
-  g.fillText(formatReset(model.resetsWeek, "wk resets Jun 2, 09:00"), 11, 155);
+  g.fillText(text.resetsWeek, 11, 155);
   g.font = `700 13px ${MONO}`;
-  g.fillText(`today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`, 11, 177);
+  g.fillText(text.today, 11, 177);
 
   line(g, 10, 191, LEFT_W - 12, 191);
   drawCloudIcon(g, 12, 202);
   g.font = `800 14px ${CJK}`;
-  const weather = model.weather ?? {};
-  g.fillText(`${weather.cond ?? "—"} ${value(weather.temp)}°`, 42, 215);
+  g.fillText(text.weatherMain, 42, 215);
   g.font = `600 11px ${CJK}`;
-  g.fillText(`体感${value(weather.feels)}°`, 110, 215);
+  g.fillText(text.weatherFeels, 110, 215);
   g.font = `600 10px ${CJK}`;
-  g.fillText(
-    `最高${value(weather.hi)}° 最低${value(weather.lo)}° · 降水${value(weather.precip)}%`,
-    11,
-    233,
-  );
+  g.fillText(text.weatherDetail, 11, 233);
 
   line(g, 10, 257, LEFT_W - 12, 257);
   g.font = `700 12px ${CJK}`;
@@ -234,34 +249,52 @@ function heartString(bond) {
 }
 
 function tempHum(v) {
-  if (!v) return "—°C · —%";
-  return `${Number(v.t ?? 0).toFixed(1)}°C · ${Math.round(Number(v.h ?? 0))}%`;
+  if (!v) return "--°C · --%";
+  const temp = typeof v.t === "number" && Number.isFinite(v.t) ? v.t.toFixed(1) : "--";
+  const humidity = typeof v.h === "number" && Number.isFinite(v.h) ? Math.round(v.h) : "--";
+  return `${temp}°C · ${humidity}%`;
 }
 
 function tokens(v) {
-  const n = Number(v ?? 0);
+  if (v == null) return "--";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "--";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(Math.round(n));
 }
 
 function money(v) {
-  return Number(v ?? 0).toFixed(2);
+  if (v == null) return "--";
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : "--";
 }
 
 function value(v) {
-  return v == null ? "—" : Math.round(Number(v));
+  if (v == null) return "--";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n)) : "--";
 }
 
 function clampPct(v) {
-  return Math.max(0, Math.min(100, Math.round(Number(v ?? 0))));
+  if (v == null) return 0;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function percentText(v) {
+  if (v == null) return "--";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "--";
+  return String(Math.max(0, Math.min(100, Math.round(n))));
 }
 
 function formatClock(clock) {
   if (typeof clock === "string" && clock.length > 0) return clock;
-  return "14:23";
+  return "--:--";
 }
 
-function formatReset(value, fallback) {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
+function formatReset(value) {
+  return typeof value === "string" && value.length > 0 ? value : "--";
 }

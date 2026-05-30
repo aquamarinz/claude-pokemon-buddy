@@ -60,9 +60,9 @@ test("KEY stores pending candidates when multiple branches are eligible", async 
   assert.equal(state.species, "eevee");
   assert.equal(state.readyToEvolve, true);
   assert.deepEqual(state.pendingCandidates.map(({ to }) => to), [
-    "leafeon",
-    "espeon",
     "sylveon",
+    "espeon",
+    "leafeon",
   ]);
 });
 
