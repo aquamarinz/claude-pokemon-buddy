@@ -68,7 +68,7 @@ test("weather text keeps feels and wind mapped to the correct fields", () => {
 
   assert.equal(text.weatherMain, "雨 19°");
   assert.equal(text.weatherFeels, "体感17°");
-  assert.match(text.weatherDetail, /风11/);
+  assert.equal(text.weatherDetail, "高22°低14° 降30% 风11");
   assert.doesNotMatch(text.weatherMain, /风/);
 });
 
@@ -95,7 +95,19 @@ test("today usage line fits before the left panel divider", () => {
 
   g.font = fitTodayLineFont(g, text.today);
 
+  assert.match(g.font, /12px "Zpix"/);
   assert.ok(g.measureText(text.today).width <= LEFT_W - 23);
+});
+
+test("layout uses the registered Zpix pixel font on the 12px grid", () => {
+  const source = readFileSync(new URL("../src/render/layout.js", import.meta.url), "utf8");
+  const staticFontSizes = [...source.matchAll(/g\.font = `[^`]*?(\d+)px \$\{(?:MONO|CJK)\}`/g)]
+    .map((match) => Number(match[1]));
+
+  assert.match(source, /GlobalFonts\.registerFromPath/);
+  assert.doesNotMatch(source, /Courier New|PingFang|Hiragino|Microsoft YaHei/);
+  assert.ok(staticFontSizes.length > 0);
+  assert.deepEqual(staticFontSizes.filter((size) => size % 12 !== 0), []);
 });
 
 test("layout text uses degraded labels instead of fake reset data", () => {

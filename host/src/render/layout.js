@@ -1,16 +1,21 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { fileURLToPath } from "node:url";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
+import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
 import { ditherSpriteGray, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
-const MONO = '"Courier New", ui-monospace, monospace';
-const CJK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+export const ZPIX_FONT_PATH = fileURLToPath(new URL("../../seed/fonts/zpix.ttf", import.meta.url));
+GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
+
+const MONO = '"Zpix"';
+const CJK = '"Zpix"';
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const BUDDY_SPRITE_SLOT = 136;
 export const BUDDY_SPRITE_SCALE = 3;
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
-const TODAY_FONT = { weight: 700, size: 13, minSize: 10, family: MONO };
+const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -44,7 +49,7 @@ export function layoutText(model = {}) {
     today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
     weatherMain: `${weatherLabel} ${value(weather.temp)}°`,
     weatherFeels: `体感${value(weather.feels)}°`,
-    weatherDetail: `最高${value(weather.hi)}° 最低${value(weather.lo)}° · 降水${value(weather.precip)}% · 风${value(weather.wind)}`,
+    weatherDetail: `高${value(weather.hi)}°低${value(weather.lo)}° 降${value(weather.precip)}% 风${value(weather.wind)}`,
   };
 }
 
@@ -53,7 +58,7 @@ function drawLeftPanel(g, model) {
   g.fillStyle = INK;
   g.fillRect(LEFT_W - 2, 0, 2, H);
 
-  g.font = `800 16px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("CLAUDE", 10, 23);
   g.font = `700 12px ${MONO}`;
   g.textAlign = "right";
@@ -63,40 +68,40 @@ function drawLeftPanel(g, model) {
 
   const p5h = clampPct(model.p5h);
   const p5hText = text.p5h;
-  g.font = `800 64px ${MONO}`;
+  g.font = `800 48px ${MONO}`;
   g.fillText(p5hText, 9, 88);
   if (p5hText !== "--") {
     const pctX = Math.round(9 + g.measureText(p5hText).width - 2);
-    g.font = `800 23px ${MONO}`;
+    g.font = `800 24px ${MONO}`;
     g.fillText("%", pctX, 87);
   }
-  g.font = `800 11px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("5H", 151, 58);
   g.fillText("WINDOW", 151, 72);
 
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   g.fillText(text.resets5h, 11, 110);
 
-  g.font = `800 11px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("WEEK", 11, 135);
   drawMeter(g, 56, 124, 100, 14, clampPct(model.pweek), { striped: true });
-  g.font = `800 14px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.textAlign = "right";
   g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 136);
   g.textAlign = "left";
 
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   g.fillText(text.resetsWeek, 11, 155);
   g.font = fitTodayLineFont(g, text.today);
   g.fillText(text.today, TODAY_TEXT_X, 177);
 
   line(g, 10, 191, LEFT_W - 12, 191);
   drawWeatherIcon(g, weatherIconKind(model.weather), 13, 201);
-  g.font = `800 13px ${CJK}`;
+  g.font = `800 12px ${CJK}`;
   g.fillText(text.weatherMain, 48, 214);
-  g.font = `600 11px ${CJK}`;
+  g.font = `600 12px ${CJK}`;
   g.fillText(text.weatherFeels, 48, 231);
-  g.font = `600 10px ${CJK}`;
+  g.font = `600 12px ${CJK}`;
   g.fillText(text.weatherDetail, 11, 248);
 
   line(g, 10, 257, LEFT_W - 12, 257);
@@ -110,7 +115,7 @@ function drawBuddyPanel(g, model) {
   const panelW = W - LEFT_W;
   const buddy = model.buddy ?? {};
 
-  drawBubble(g, panelX + 114, 13, buddy.bubble ?? "Pika!");
+  drawBubble(g, panelX + 114, 13, buddy.bubble ?? EEVEE_IDLE_CRY);
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
@@ -224,16 +229,16 @@ function drawMeter(g, x, y, w, h, pct, { striped }) {
 }
 
 function drawBubble(g, x, y, text) {
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   const w = Math.ceil(g.measureText(text).width) + 16;
   g.fillStyle = PAPER;
   g.strokeStyle = INK;
   g.lineWidth = 2;
-  roundedRect(g, x, y, w, 21, 7);
+  roundedRect(g, x, y, w, 22, 7);
   g.fill();
   g.stroke();
   g.fillStyle = INK;
-  g.fillText(text, x + 8, y + 14);
+  g.fillText(text, x + 8, y + 15);
 }
 
 function drawShadow(g, cx, y) {
