@@ -30,7 +30,8 @@ export async function runOneTick({
   room,
   statePath = "out/state.json",
   framePath = "out/frame.png",
-  today = new Date().toISOString().slice(0, 10),
+  now = new Date(),
+  today = localYmd(now),
   mock,
 } = {}) {
   if (!usage) throw new Error("usage is required");
@@ -38,6 +39,8 @@ export async function runOneTick({
 
   mkdirSync(dirname(statePath), { recursive: true });
   const transport = mock ?? createMockTransport({ framePath });
+  const buttonEvents = [];
+  const offButtons = transport.onButton?.((event) => buttonEvents.push(event));
   const sensor = room ?? transport.feedSensor();
   let pet = ensurePet(loadState(statePath), today);
   const closedUsageDays = new Set();
@@ -55,13 +58,18 @@ export async function runOneTick({
 
   pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });
 
-  const evolution = resolveEvolution(pet.species, {
-    bond: pet.bond,
-    daytime: true,
-    warmHumid: weather.temp >= 20 && weather.humidity >= 60,
-    cold: weather.temp <= 4,
-  });
-  if (evolution.auto) pet = { ...pet, species: evolution.auto };
+  if (pet.bond >= PARAMS.evolveBond || pet.stone) {
+    pet = { ...pet, readyToEvolve: true };
+  }
+
+  if (pet.readyToEvolve && hasKeyPress(buttonEvents)) {
+    const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
+    if (evolution.auto) {
+      pet = evolvePet(pet, evolution.auto);
+    } else if (evolution.candidates.length > 0) {
+      pet = { ...pet, pendingCandidates: evolution.candidates };
+    }
+  }
 
   const mood = deriveMood(usage);
   const sprite = await loadBuddySprite(pet.species);
@@ -84,6 +92,7 @@ export async function runOneTick({
   });
 
   saveState(statePath, pet);
+  offButtons?.();
   await transport.push(pngBuffer);
 
   return pet;
@@ -172,6 +181,52 @@ async function loadWeatherSnapshot(weatherClient, config) {
 
 function bondHearts(bond) {
   return Math.max(0, Math.min(5, Math.round(Number(bond ?? 0) / 40)));
+}
+
+function hasKeyPress(events) {
+  return events.some((event) => event?.key === "KEY");
+}
+
+function evolutionContext({ pet, weather, room, now }) {
+  const hour = now.getHours();
+  const daytime = hour >= 6 && hour < 18;
+  const careCount = Math.max(0, Number(pet.careCount ?? 0));
+
+  return {
+    bond: pet.bond,
+    daytime,
+    night: !daytime,
+    care: careCount > 0,
+    careCount,
+    roomTemp: room?.t,
+    roomHumidity: room?.h,
+    weather: weather?.cond,
+    temp: weather?.temp,
+    humidity: weather?.humidity,
+    warmHumid: isWarmHumid(weather?.temp, weather?.humidity) || isWarmHumid(room?.t, room?.h),
+    cold: isCold(weather?.temp) || isCold(room?.t),
+    stone: pet.stone,
+  };
+}
+
+function evolvePet(pet, species) {
+  const { pendingCandidates, stone, ...rest } = pet;
+  return { ...rest, species, readyToEvolve: false };
+}
+
+function isWarmHumid(temp, humidity) {
+  return typeof temp === "number" && typeof humidity === "number" && temp >= 20 && humidity >= 60;
+}
+
+function isCold(temp) {
+  return typeof temp === "number" && temp <= 4;
+}
+
+function localYmd(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 const isCli = process.argv[1] && existsSync(process.argv[1])

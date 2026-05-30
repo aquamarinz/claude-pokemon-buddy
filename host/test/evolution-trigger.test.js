@@ -1,0 +1,142 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { runOneTick } from "../src/index.js";
+import { createMockTransport } from "../src/transport/mock.js";
+
+test("bond threshold marks ready without auto-evolving species", async () => {
+  const statePath = join("out", "test-ready-evolve-state.json");
+  const framePath = join("out", "test-ready-evolve-frame.png");
+  writeState(statePath, { bond: 160 });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    room: { t: 21, h: 45 },
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+  });
+
+  assert.equal(state.species, "eevee");
+  assert.equal(state.readyToEvolve, true);
+});
+
+test("night RTC plus KEY evolves ready Eevee to Umbreon", async () => {
+  const statePath = join("out", "test-key-umbreon-state.json");
+  const framePath = join("out", "test-key-umbreon-frame.png");
+  writeState(statePath, { bond: 160, readyToEvolve: true });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 21),
+    mock: mockPressingKey(framePath),
+  });
+
+  assert.equal(state.species, "umbreon");
+  assert.equal(state.readyToEvolve, false);
+  assert.equal(state.pendingCandidates, undefined);
+});
+
+test("KEY stores pending candidates when multiple branches are eligible", async () => {
+  const statePath = join("out", "test-pending-evolve-state.json");
+  const framePath = join("out", "test-pending-evolve-frame.png");
+  writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 1 });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 24, humidity: 70 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: mockPressingKey(framePath, { t: 24, h: 70 }),
+  });
+
+  assert.equal(state.species, "eevee");
+  assert.equal(state.readyToEvolve, true);
+  assert.deepEqual(state.pendingCandidates.map(({ to }) => to), [
+    "leafeon",
+    "espeon",
+    "sylveon",
+  ]);
+});
+
+test("stone overrides RTC branch when KEY triggers evolution", async () => {
+  const statePath = join("out", "test-stone-evolve-state.json");
+  const framePath = join("out", "test-stone-evolve-frame.png");
+  writeState(statePath, { bond: 160, readyToEvolve: true, stone: "fire" });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: mockPressingKey(framePath),
+  });
+
+  assert.equal(state.species, "flareon");
+  assert.equal(state.stone, undefined);
+  assert.equal(state.readyToEvolve, false);
+});
+
+function writeState(statePath, overrides) {
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 120,
+      streak: 0,
+      shield: 0,
+      lastSettled: "2026-05-29",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      ...overrides,
+    }),
+  );
+}
+
+function mockPressingKey(framePath, sensor = { t: 21, h: 45 }) {
+  const mock = createMockTransport({ framePath, sensor });
+  const feedSensor = mock.feedSensor;
+  mock.feedSensor = () => {
+    mock.injectButton("KEY", "short");
+    return feedSensor();
+  };
+  return mock;
+}
+
+function usageWithTokens(todayTokens) {
+  return {
+    p5h: 12,
+    pweek: 34,
+    todayCost: 1,
+    todayTokens,
+    modelled: true,
+    weekTokens: todayTokens,
+  };
+}
+
+function weather({ temp, humidity }) {
+  return {
+    cond: "多云",
+    temp,
+    feels: temp,
+    hi: temp + 2,
+    lo: temp - 2,
+    precip: 30,
+    wind: 11,
+    humidity,
+  };
+}
