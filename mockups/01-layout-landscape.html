@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Pokémon Buddy — 版面 mockup (400×300)</title>
+<style>
+  :root{color-scheme:dark;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0f1115;color:#e8e9ed;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;
+    padding:30px 20px 60px;display:flex;flex-direction:column;align-items:center;min-height:100vh;}
+  h1{font-size:20px;font-weight:800;letter-spacing:.3px;margin-bottom:8px;text-align:center;}
+  .sub{font-size:13px;color:#9aa0ad;text-align:center;max-width:700px;margin-bottom:4px;line-height:1.55;}
+  .hint{font-size:12px;color:#62b6ff;text-align:center;margin-bottom:26px;}
+  .layouts{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;}
+  .card{cursor:pointer;border:2px solid transparent;border-radius:16px;padding:14px;transition:border-color .15s,background .15s;}
+  .card:hover{border-color:#2c3140;}
+  .card.sel{border-color:#62b6ff;background:#10141c;}
+  .cap{margin-top:12px;text-align:center;max-width:400px;}
+  .cap b{display:block;font-size:15px;margin-bottom:2px;}
+  .cap span{font-size:12px;color:#9aa0ad;}
+
+  /* ---- mock reflective monochrome screen (400x300 landscape) ---- */
+  .rlcd{width:400px;height:300px;background:#c9ccbf;color:#14160d;
+    border:7px solid #2a2c22;border-radius:12px;overflow:hidden;position:relative;display:flex;
+    font-family:'Courier New',ui-monospace,monospace;box-shadow:inset 0 0 0 2px #b5b8ac;}
+  .rlcd *{box-sizing:border-box;}
+  .row{flex-direction:row;}
+  .col{flex-direction:column;}
+  .mon{image-rendering:pixelated;filter:grayscale(1) contrast(1.9) brightness(1.05);}
+  .bubble{font-size:11px;font-weight:700;border:2px solid #14160d;border-radius:8px;padding:2px 8px;background:#c9ccbf;}
+  .meter{height:12px;border:2px solid #14160d;border-radius:7px;overflow:hidden;background:#c9ccbf;}
+  .meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,#14160d 0 3px,#c9ccbf 3px 5px);}
+  .glabel{font-size:10px;font-weight:800;letter-spacing:1px;}
+  .statline{font-size:11px;font-weight:700;letter-spacing:.2px;}
+
+  /* A: left data / right buddy */
+  .leftcol{width:216px;flex:none;border-right:2px solid #14160d;padding:9px 10px;display:flex;flex-direction:column;gap:6px;}
+  .phead{font-size:13px;font-weight:800;letter-spacing:2px;border-bottom:2px solid #14160d;padding-bottom:3px;}
+  .hero{display:flex;align-items:flex-start;gap:6px;}
+  .hero .pct{font-size:50px;line-height:.8;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+  .hero .u{font-size:18px;font-weight:700;}
+  .hero .lab{font-size:10px;font-weight:800;letter-spacing:1px;padding-top:5px;line-height:1.1;}
+  .wkrow{display:grid;grid-template-columns:38px 1fr 36px;align-items:center;gap:6px;}
+  .wkrow b{font-size:12px;text-align:right;}
+  .lfoot{margin-top:auto;display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:2px solid #14160d;padding-top:4px;}
+  .rightcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;position:relative;}
+  .rightcol .bubble{position:absolute;top:16px;right:14px;}
+  .rightcol .mon{width:150px;height:150px;}
+  .mood{font-size:12px;font-weight:800;letter-spacing:1px;}
+  .mood .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#14160d;}
+
+  /* B: game boy battle scene */
+  .topbar{height:24px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 9px;font-size:11px;font-weight:800;letter-spacing:.5px;border-bottom:2px solid #14160d;}
+  .topbar .dot{width:7px;height:7px;border-radius:50%;background:#14160d;display:inline-block;}
+  .scene{flex:1;position:relative;}
+  .scene .ground{position:absolute;left:0;right:0;bottom:34px;border-top:2px dashed #14160d;}
+  .scene .mon{position:absolute;right:34px;bottom:30px;width:132px;height:132px;}
+  .scene .bubble{position:absolute;right:18px;top:10px;}
+  .hpbox{position:absolute;left:12px;top:14px;width:206px;border:2px solid #14160d;border-radius:6px;padding:5px 8px;background:#c9ccbf;display:flex;flex-direction:column;gap:4px;}
+  .hpbox .name{font-size:12px;font-weight:800;letter-spacing:1px;display:flex;justify-content:space-between;}
+  .hpbox .hprow{display:grid;grid-template-columns:30px 1fr;align-items:center;gap:6px;}
+  .bstrip{height:26px;flex:none;border-top:2px solid #14160d;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;letter-spacing:.3px;}
+
+  /* C: pet-dominant */
+  .petzone{flex:1;position:relative;display:flex;align-items:center;justify-content:center;}
+  .petzone .mon{width:206px;height:206px;}
+  .petzone .bubble{position:absolute;top:24px;left:20px;}
+  .rail{width:118px;flex:none;border-left:2px solid #14160d;padding:9px 8px;display:flex;flex-direction:column;gap:9px;justify-content:center;}
+  .rcell{display:flex;flex-direction:column;gap:3px;}
+  .rcell .glabel{display:flex;justify-content:space-between;}
+  .bignum{font-size:15px;font-weight:800;letter-spacing:-.5px;}
+</style>
+</head>
+<body>
+  <h1>🐾 Claude Pokémon Buddy · 版面 mockup</h1>
+  <p class="sub">真实尺寸 <b>400×300 横版</b> · 单色反射屏（ST7305）· Game Boy 像素风 · 皮卡丘为占位精灵（已灰度化模拟单色屏效果）</p>
+  <p class="hint">点击只是高亮预览；选好后在终端告诉我 A / B / C（可混搭）</p>
+
+  <div class="layouts">
+
+    <!-- A -->
+    <div class="card" data-choice="A" onclick="pick(this)">
+      <div class="rlcd row">
+        <div class="leftcol">
+          <div class="phead">CLAUDE</div>
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="statline">today $4.10 · 5.32M tok</div>
+          <div class="statline">resets in 2h 14m</div>
+          <div class="lfoot"><span>14:23</span><span>23.4°C</span></div>
+        </div>
+        <div class="rightcol">
+          <div class="bubble">Pika!</div>
+          <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="pikachu">
+          <span class="mood"><span class="dot"></span> focused</span>
+        </div>
+      </div>
+      <div class="cap"><b>A · 左数据 / 右桌宠（推荐）</b><span>真正的"宝可梦在旁边"，仪表盘照样清楚</span></div>
+    </div>
+
+    <!-- B -->
+    <div class="card" data-choice="B" onclick="pick(this)">
+      <div class="rlcd col">
+        <div class="topbar"><span>14:23</span><span>CLAUDE · 23.4°C</span><span class="dot"></span></div>
+        <div class="scene">
+          <div class="hpbox">
+            <div class="name"><span>CLAUDE</span><span>Lv.41</span></div>
+            <div class="hprow"><span class="glabel">HP</span><div class="meter"><i style="width:72%"></i></div></div>
+            <div class="hprow"><span class="glabel">EXP</span><div class="meter"><i style="width:41%"></i></div></div>
+          </div>
+          <div class="bubble">Pika!</div>
+          <div class="ground"></div>
+          <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="pikachu">
+        </div>
+        <div class="bstrip">TODAY $4.10 · 5.3M tok · resets 2h14m</div>
+      </div>
+      <div class="cap"><b>B · Game Boy 战斗风</b><span>HP=5h 额度、EXP=周用量、Lv=等级，最像玩游戏</span></div>
+    </div>
+
+    <!-- C -->
+    <div class="card" data-choice="C" onclick="pick(this)">
+      <div class="rlcd row">
+        <div class="petzone">
+          <div class="bubble">Pika!</div>
+          <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="pikachu">
+        </div>
+        <div class="rail">
+          <div class="rcell"><span class="glabel"><span>5H</span><span>72%</span></span><div class="meter"><i style="width:72%"></i></div></div>
+          <div class="rcell"><span class="glabel"><span>WK</span><span>41%</span></span><div class="meter"><i style="width:41%"></i></div></div>
+          <div class="rcell"><span class="glabel">TODAY</span><span class="bignum">$4.10</span></div>
+          <div class="rcell"><span class="glabel">ROOM</span><span class="bignum">23.4°C</span></div>
+        </div>
+      </div>
+      <div class="cap"><b>C · 桌宠优先</b><span>宝可梦超大，数据缩成右侧细栏</span></div>
+    </div>
+
+  </div>
+
+  <script>
+    function pick(el){
+      document.querySelectorAll('.card').forEach(c=>c.classList.remove('sel'));
+      el.classList.add('sel');
+    }
+  </script>
+</body>
+</html>

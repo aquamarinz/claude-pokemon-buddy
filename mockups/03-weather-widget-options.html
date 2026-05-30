@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Pokémon Buddy — 天气 widget 方案 (400×300)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0f1115;color:#e8e9ed;font-family:-apple-system,system-ui,sans-serif;
+    padding:28px 20px 70px;display:flex;flex-direction:column;align-items:center;}
+  h1{font-size:19px;font-weight:800;margin-bottom:6px;text-align:center;}
+  .sub{font-size:13px;color:#9aa0ad;text-align:center;max-width:680px;margin-bottom:8px;line-height:1.5;}
+  .opt{display:flex;flex-direction:column;align-items:center;margin-top:30px;}
+  .olabel{font-size:13px;font-weight:800;color:#62b6ff;letter-spacing:.5px;margin-bottom:4px;}
+  .odesc{font-size:12px;color:#9aa0ad;margin-bottom:12px;max-width:420px;text-align:center;}
+
+  /* device */
+  .rlcd{width:400px;height:300px;background:#c9ccbf;color:#14160d;border:7px solid #2a2c22;border-radius:12px;
+    overflow:hidden;position:relative;display:flex;font-family:'Courier New',ui-monospace,monospace;box-shadow:inset 0 0 0 2px #b5b8ac;}
+  .rlcd.col{flex-direction:column;}
+  .rlcd *{box-sizing:border-box;}
+  .maintop{flex:1;display:flex;min-height:0;}
+  .mon{image-rendering:pixelated;filter:grayscale(1) contrast(1.9) brightness(1.05);}
+  .bubble{font-size:11px;font-weight:700;border:2px solid #14160d;border-radius:8px;padding:2px 8px;background:#c9ccbf;}
+  .meter{height:12px;border:2px solid #14160d;border-radius:7px;overflow:hidden;background:#c9ccbf;}
+  .meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,#14160d 0 3px,#c9ccbf 3px 5px);}
+  .glabel{font-size:10px;font-weight:800;letter-spacing:1px;}
+  .statline{font-size:11px;font-weight:700;}
+  .tag{font-size:9px;font-weight:800;letter-spacing:1px;border:1.5px solid #14160d;border-radius:3px;padding:0 3px;margin-right:4px;}
+  .resetline{font-size:10px;font-weight:700;opacity:.82;margin-top:-2px;}
+
+  .leftcol{width:208px;flex:none;border-right:2px solid #14160d;padding:9px 10px;display:flex;flex-direction:column;gap:6px;}
+  .phead{font-size:13px;font-weight:800;letter-spacing:2px;border-bottom:2px solid #14160d;padding-bottom:3px;}
+  .hero{display:flex;align-items:flex-start;gap:7px;}
+  .hero .pct{font-size:46px;line-height:.8;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+  .hero .u{font-size:17px;font-weight:700;}
+  .hero .lab{font-size:10px;font-weight:800;letter-spacing:1px;padding-top:5px;line-height:1.15;}
+  .wkrow{display:grid;grid-template-columns:36px 1fr 34px;align-items:center;gap:6px;}
+  .wkrow b{font-size:12px;text-align:right;}
+
+  .rightcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;position:relative;}
+  .rightcol .bubble{position:absolute;top:14px;right:12px;}
+  .rightcol .mon{width:138px;height:138px;}
+  .mood{font-size:12px;font-weight:800;letter-spacing:1px;}
+  .mood .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#14160d;}
+
+  svg.wx{display:inline-block;vertical-align:middle;}
+
+  /* A: full-width bottom weather bar */
+  .wxbar{height:46px;flex:none;border-top:3px double #14160d;display:flex;align-items:center;justify-content:space-between;padding:0 11px;}
+  .wxbar .now{display:flex;align-items:center;gap:7px;}
+  .wxbar .now .t{font-size:24px;font-weight:800;letter-spacing:-1px;}
+  .wxbar .now .cond{font-size:11px;font-weight:700;line-height:1.1;}
+  .wxbar .now .hl{font-size:10px;font-weight:700;opacity:.8;}
+  .wxbar .right{text-align:right;font-size:12px;font-weight:700;line-height:1.4;}
+
+  /* B: left-col weather card */
+  .wxcard{margin-top:auto;border-top:2px solid #14160d;padding-top:6px;display:flex;flex-direction:column;gap:4px;}
+  .wxcard .big{display:flex;align-items:center;gap:8px;}
+  .wxcard .big .t{font-size:30px;font-weight:800;letter-spacing:-1px;}
+  .wxcard .sub2{font-size:11px;font-weight:700;}
+  .wxcard .inrow{display:flex;justify-content:space-between;font-size:12px;font-weight:700;}
+
+  /* C: bottom bar with mini forecast */
+  .wxbar2{height:58px;flex:none;border-top:3px double #14160d;display:flex;align-items:center;padding:0 10px;gap:10px;}
+  .wxbar2 .now{display:flex;align-items:center;gap:6px;border-right:2px solid #14160d;padding-right:10px;}
+  .wxbar2 .now .t{font-size:22px;font-weight:800;}
+  .fc{display:flex;gap:12px;flex:1;justify-content:center;}
+  .fcell{display:flex;flex-direction:column;align-items:center;font-size:10px;font-weight:700;gap:1px;}
+  .wxbar2 .inblk{text-align:right;font-size:11px;font-weight:700;line-height:1.4;border-left:2px solid #14160d;padding-left:9px;}
+
+  /* D: minimal one-liner */
+  .envblk{margin-top:auto;border-top:2px solid #14160d;padding-top:5px;display:flex;flex-direction:column;gap:3px;}
+  .envrow{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;}
+  .envrow .wxmini{display:flex;align-items:center;gap:5px;}
+</style></head>
+<body>
+  <h1>🌤️ 天气 widget · 4 种方案（400×300 单色）</h1>
+  <p class="sub">天气图标用内联 SVG 单色线/块画（真机 1-bit 点阵就该这样，非彩色 emoji）。A/C 是"底部通栏"，顺带把左栏腾空、解决拥挤；B/D 留在左栏。</p>
+
+  <!-- A -->
+  <div class="opt">
+    <div class="olabel">A · 底部通栏天气（推荐：横跨整宽，左栏腾空不挤）</div>
+    <div class="odesc">天气 + 室内温湿度 + 时钟 排在整屏最下方一条；左栏只剩 Claude 用量，立刻清爽。</div>
+    <div class="rlcd col">
+      <div class="maintop">
+        <div class="leftcol">
+          <div class="phead">CLAUDE</div>
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="resetline">↺ resets in 2h 14m</div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="resetline">↺ wk resets Jun 2, 09:00</div>
+          <div class="statline" style="margin-top:auto">today $4.10 · 5.3M tok</div>
+        </div>
+        <div class="rightcol">
+          <div class="bubble">Pika!</div>
+          <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+          <span class="mood"><span class="dot"></span> focused</span>
+        </div>
+      </div>
+      <div class="wxbar">
+        <div class="now">
+          <svg class="wx" width="30" height="30" viewBox="0 0 24 24"><circle cx="9" cy="9" r="4" fill="#14160d"/><g stroke="#14160d" stroke-width="1.6" stroke-linecap="round"><line x1="9" y1="1.5" x2="9" y2="3.5"/><line x1="9" y1="14.5" x2="9" y2="16.5"/><line x1="1.5" y1="9" x2="3.5" y2="9"/><line x1="14.5" y1="9" x2="16.5" y2="9"/><line x1="3.8" y1="3.8" x2="5.2" y2="5.2"/><line x1="12.8" y1="12.8" x2="14.2" y2="14.2"/><line x1="14.2" y1="3.8" x2="12.8" y2="5.2"/></g><path d="M10 20h8a3.2 3.2 0 0 0 .2-6.4 4.8 4.8 0 0 0-9.2 1A2.8 2.8 0 0 0 10 20z" fill="#14160d"/></svg>
+          <span class="t">19°</span>
+          <span><span class="cond">Partly cloudy</span><br><span class="hl">H 22°  L 14°</span></span>
+        </div>
+        <div class="right"><span class="tag">IN</span>23.4° · 56%<br>14:23</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="opt">
+    <div class="olabel">B · 左栏天气卡（图标主导，留在左下角）</div>
+    <div class="odesc">天气做成左栏底部一张小卡：大图标 + 大温度 + 状况/最高最低；室内一行在下。右侧 Pokémon 保持满高。</div>
+    <div class="rlcd">
+      <div class="leftcol">
+        <div class="phead">CLAUDE</div>
+        <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+        <div class="resetline">↺ resets in 2h 14m</div>
+        <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+        <div class="statline">today $4.10 · 5.3M tok</div>
+        <div class="wxcard">
+          <div class="big">
+            <svg class="wx" width="34" height="34" viewBox="0 0 24 24" fill="#14160d"><path d="M7 19h10a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 19z"/></svg>
+            <span class="t">19°</span>
+          </div>
+          <div class="sub2">Cloudy · H 22° L 14°</div>
+          <div class="inrow"><span><span class="tag">IN</span>23.4° · 56%</span><span>14:23</span></div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="bubble">Pika!</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="dot"></span> focused</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="opt">
+    <div class="olabel">C · 底部通栏 + 迷你预报（信息最多，年历感）</div>
+    <div class="odesc">底部通栏里再加未来 3 个时段的小预报（图标+温度）；右侧带室内温湿度。最"天气站"。</div>
+    <div class="rlcd col">
+      <div class="maintop">
+        <div class="leftcol">
+          <div class="phead">CLAUDE</div>
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="resetline">↺ resets in 2h 14m</div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="statline" style="margin-top:auto">today $4.10 · 5.3M tok</div>
+        </div>
+        <div class="rightcol">
+          <div class="bubble">Pika!</div>
+          <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+          <span class="mood"><span class="dot"></span> focused</span>
+        </div>
+      </div>
+      <div class="wxbar2">
+        <div class="now">
+          <svg class="wx" width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#14160d"/><g stroke="#14160d" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="22"/><line x1="2" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="6.7" y2="6.7"/><line x1="17.3" y1="17.3" x2="19" y2="19"/><line x1="19" y1="5" x2="17.3" y2="6.7"/><line x1="6.7" y1="17.3" x2="5" y2="19"/></g></svg>
+          <span class="t">19°</span>
+        </div>
+        <div class="fc">
+          <div class="fcell">15h<svg class="wx" width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><circle cx="12" cy="12" r="6"/></svg>20°</div>
+          <div class="fcell">18h<svg class="wx" width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><path d="M6 17h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 17z"/></svg>17°</div>
+          <div class="fcell">21h<svg class="wx" width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><path d="M6 14h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 14z"/><g stroke="#14160d" stroke-width="1.6" stroke-linecap="round"><line x1="9" y1="17" x2="8" y2="20"/><line x1="13" y1="17" x2="12" y2="20"/><line x1="17" y1="17" x2="16" y2="20"/></g></svg>14°</div>
+        </div>
+        <div class="inblk"><span class="tag">IN</span>23.4°·56%<br>14:23</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="opt">
+    <div class="olabel">D · 极简一行（最省地方，最接近当前）</div>
+    <div class="odesc">天气压成左栏底部一行（清晰小图标 + 温度 + 最高最低），室内一行。改动最小。</div>
+    <div class="rlcd">
+      <div class="leftcol">
+        <div class="phead">CLAUDE</div>
+        <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+        <div class="resetline">↺ resets in 2h 14m</div>
+        <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+        <div class="resetline">↺ wk resets Jun 2, 09:00</div>
+        <div class="statline">today $4.10 · 5.3M tok</div>
+        <div class="envblk">
+          <div class="envrow"><span class="wxmini"><svg class="wx" width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><path d="M6 17h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 17z"/></svg>19° · H22 L14</span><span>14:23</span></div>
+          <div class="envrow"><span><span class="tag">IN</span>23.4° · 56%</span></div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="bubble">Pika!</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="dot"></span> focused</span>
+      </div>
+    </div>
+  </div>
+
+</body></html>

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Pokémon Buddy — 左栏：用量 / 天气 / 里外温湿度</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0f1115;color:#e8e9ed;font-family:-apple-system,system-ui,sans-serif;
+    padding:28px 20px 70px;display:flex;flex-direction:column;align-items:center;}
+  h1{font-size:19px;font-weight:800;margin-bottom:6px;text-align:center;}
+  .sub{font-size:13px;color:#9aa0ad;text-align:center;max-width:680px;margin-bottom:8px;line-height:1.5;}
+  .opt{display:flex;flex-direction:column;align-items:center;margin-top:30px;}
+  .olabel{font-size:13px;font-weight:800;color:#62b6ff;margin-bottom:4px;}
+  .odesc{font-size:12px;color:#9aa0ad;margin-bottom:12px;max-width:430px;text-align:center;}
+
+  .rlcd{width:400px;height:300px;background:#c9ccbf;color:#14160d;border:7px solid #2a2c22;border-radius:12px;
+    overflow:hidden;position:relative;display:flex;font-family:'Courier New',ui-monospace,monospace;box-shadow:inset 0 0 0 2px #b5b8ac;}
+  .rlcd *{box-sizing:border-box;}
+  .mon{image-rendering:pixelated;filter:grayscale(1) contrast(1.9) brightness(1.05);}
+  .bubble{font-size:11px;font-weight:700;border:2px solid #14160d;border-radius:8px;padding:2px 8px;background:#c9ccbf;}
+  .meter{height:11px;border:2px solid #14160d;border-radius:7px;overflow:hidden;background:#c9ccbf;}
+  .meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,#14160d 0 3px,#c9ccbf 3px 5px);}
+  .glabel{font-size:10px;font-weight:800;letter-spacing:1px;}
+  .statline{font-size:11px;font-weight:700;}
+  .resetline{font-size:10px;font-weight:700;opacity:.82;margin-top:-2px;}
+  svg.wx{display:inline-block;vertical-align:middle;flex:none;}
+
+  .leftcol{width:212px;flex:none;border-right:2px solid #14160d;padding:8px 10px;display:flex;flex-direction:column;}
+  .phead{font-size:13px;font-weight:800;letter-spacing:2px;border-bottom:2px solid #14160d;padding-bottom:3px;margin-bottom:5px;}
+  .usage{display:flex;flex-direction:column;gap:5px;}
+  .hero{display:flex;align-items:flex-start;gap:7px;}
+  .hero .pct{font-size:44px;line-height:.8;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+  .hero .u{font-size:16px;font-weight:700;}
+  .hero .lab{font-size:10px;font-weight:800;letter-spacing:1px;padding-top:4px;line-height:1.15;}
+  .wkrow{display:grid;grid-template-columns:34px 1fr 32px;align-items:center;gap:6px;}
+  .wkrow b{font-size:12px;text-align:right;}
+
+  /* zone 2: weather */
+  .wzone{border-top:2px solid #14160d;margin-top:7px;padding-top:6px;}
+  .wrow{display:flex;align-items:center;gap:7px;}
+  .wrow .wt{font-size:22px;font-weight:800;letter-spacing:-1px;}
+  .wrow .wcond{font-size:12px;font-weight:700;}
+  .wrow .whl{margin-left:auto;font-size:10px;font-weight:700;opacity:.82;}
+  .wbig{display:flex;align-items:center;gap:9px;}
+  .wbig .wt{font-size:32px;font-weight:800;letter-spacing:-1px;}
+  .wbig .meta{font-size:11px;font-weight:700;line-height:1.25;}
+  .fcmini{display:flex;gap:10px;margin-top:4px;font-size:10px;font-weight:700;}
+  .fcmini span{display:flex;align-items:center;gap:3px;}
+
+  /* zone 3: in/out temp+humidity, pinned bottom */
+  .tzone{margin-top:auto;border-top:2px solid #14160d;padding-top:5px;display:flex;flex-direction:column;gap:3px;}
+  .trow{display:flex;align-items:baseline;font-size:12px;font-weight:700;}
+  .trow .tag{font-size:9px;font-weight:800;letter-spacing:1px;border:1.5px solid #14160d;border-radius:3px;padding:0 3px;margin-right:6px;width:30px;text-align:center;flex:none;}
+
+  .rightcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;position:relative;}
+  .rightcol .bubble{position:absolute;top:14px;right:12px;}
+  .rightcol .mon{width:138px;height:138px;}
+  .mood{font-size:12px;font-weight:800;letter-spacing:1px;}
+  .mood .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#14160d;}
+</style></head>
+<body>
+  <h1>🐾 左栏三段：用量 → 天气 → 里外温湿度</h1>
+  <p class="sub">结构按你说的：Claude 用量在上、<b>天气紧贴其下</b>、<b>里外温湿度钉在最底部</b>。3 个变体差别在天气段的丰富度，以及"室外温度"要不要在天气段单独出现（避免和 OUT 行重复）。</p>
+
+  <!-- V1 -->
+  <div class="opt">
+    <div class="olabel">V1 · 天气=状况+今日高低温（不显当前温度，零重复，推荐）</div>
+    <div class="odesc">天气段只说"什么天 + 今日 H/L"；当前精确室外温度放进底部 OUT 行，里外对称、不重复。</div>
+    <div class="rlcd">
+      <div class="leftcol">
+        <div class="phead">CLAUDE</div>
+        <div class="usage">
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="resetline">↺ resets in 2h 14m</div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="resetline">↺ wk resets Jun 2, 09:00</div>
+          <div class="statline">today $4.10 · 5.3M tok</div>
+        </div>
+        <div class="wzone">
+          <div class="wrow">
+            <svg class="wx" width="22" height="22" viewBox="0 0 24 24" fill="#14160d"><path d="M7 18h10a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/></svg>
+            <span class="wcond">Cloudy</span><span class="whl">H 22°  L 14°</span>
+          </div>
+        </div>
+        <div class="tzone">
+          <div class="trow"><span class="tag">IN</span>23.4°C · 56%</div>
+          <div class="trow"><span class="tag">OUT</span>19.0°C · 64%</div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="bubble">Pika!</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="dot"></span> focused</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- V2 -->
+  <div class="opt">
+    <div class="olabel">V2 · 天气=大图标+大当前温度+状况（最醒目，室外温度会重复一次）</div>
+    <div class="odesc">天气段把当前室外温度做大做醒目；底部仍给完整里外温湿度，所以 19° 会出现两次。</div>
+    <div class="rlcd">
+      <div class="leftcol">
+        <div class="phead">CLAUDE</div>
+        <div class="usage">
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="resetline">↺ resets in 2h 14m</div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="resetline">↺ wk resets Jun 2, 09:00</div>
+          <div class="statline">today $4.10 · 5.3M tok</div>
+        </div>
+        <div class="wzone">
+          <div class="wbig">
+            <svg class="wx" width="34" height="34" viewBox="0 0 24 24" fill="#14160d"><path d="M7 18h10a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/></svg>
+            <span class="wt">19°</span>
+            <span class="meta">Cloudy<br>H 22° L 14°</span>
+          </div>
+        </div>
+        <div class="tzone">
+          <div class="trow"><span class="tag">IN</span>23.4°C · 56%</div>
+          <div class="trow"><span class="tag">OUT</span>19.0°C · 64%</div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="bubble">Pika!</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="dot"></span> focused</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- V3 -->
+  <div class="opt">
+    <div class="olabel">V3 · 天气带迷你预报（信息最多）</div>
+    <div class="odesc">天气段加未来 3 时段小预报（图标+温度）；底部仍是里外温湿度。塞得下但最满。</div>
+    <div class="rlcd">
+      <div class="leftcol">
+        <div class="phead">CLAUDE</div>
+        <div class="usage">
+          <div class="hero"><span class="pct">72<span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+          <div class="resetline">↺ resets in 2h 14m</div>
+          <div class="wkrow"><span class="glabel">WEEK</span><div class="meter"><i style="width:41%"></i></div><b>41%</b></div>
+          <div class="statline">today $4.10 · 5.3M tok</div>
+        </div>
+        <div class="wzone">
+          <div class="wrow">
+            <svg class="wx" width="20" height="20" viewBox="0 0 24 24" fill="#14160d"><path d="M7 18h10a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/></svg>
+            <span class="wt" style="font-size:18px">19°</span><span class="wcond">Cloudy</span>
+          </div>
+          <div class="fcmini">
+            <span>15h<svg class="wx" width="13" height="13" viewBox="0 0 24 24" fill="#14160d"><circle cx="12" cy="12" r="7"/></svg>20°</span>
+            <span>18h<svg class="wx" width="13" height="13" viewBox="0 0 24 24" fill="#14160d"><path d="M6 16h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 16z"/></svg>17°</span>
+            <span>21h<svg class="wx" width="13" height="13" viewBox="0 0 24 24" fill="#14160d"><path d="M6 14h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 14z"/><g stroke="#14160d" stroke-width="1.5"><line x1="9" y1="17" x2="8.3" y2="19.5"/><line x1="13" y1="17" x2="12.3" y2="19.5"/></g></svg>14°</span>
+          </div>
+        </div>
+        <div class="tzone">
+          <div class="trow"><span class="tag">IN</span>23.4°C · 56%</div>
+          <div class="trow"><span class="tag">OUT</span>19.0°C · 64%</div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="bubble">Pika!</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="dot"></span> focused</span>
+      </div>
+    </div>
+  </div>
+
+</body></html>

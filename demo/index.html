@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Pokémon Buddy — 可交互 Demo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0d0f13;color:#e8e9ed;font-family:-apple-system,system-ui,sans-serif;padding:24px;display:flex;gap:30px;flex-wrap:wrap;justify-content:center;}
+  h1{font-size:18px;font-weight:800;}
+  .col-device{display:flex;flex-direction:column;align-items:center;gap:14px;position:sticky;top:24px;align-self:flex-start;}
+  .hint{font-size:12px;color:#8b909c;max-width:430px;line-height:1.5;text-align:center;}
+
+  /* ===== device 400x300 monochrome ===== */
+  .bezel{padding:16px;background:linear-gradient(160deg,#3a3d34,#23251e);border-radius:20px;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+  .rlcd{width:400px;height:300px;background:#c9ccbf;color:#14160d;border:6px solid #1c1e17;border-radius:10px;overflow:hidden;position:relative;display:flex;font-family:'Courier New',ui-monospace,monospace;box-shadow:inset 0 0 0 2px #b5b8ac;}
+  .rlcd *{box-sizing:border-box;}
+  .cjk{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+  .mon{image-rendering:pixelated;filter:grayscale(1) contrast(1.9) brightness(1.05);}
+  .mon.shiny{filter:grayscale(1) contrast(1.6) brightness(1.15) drop-shadow(0 0 3px #14160d);}
+  /* idle + 各心情动效（真机=低帧率等价物） */
+  .mon.m-happy{animation:bobHappy .9s ease-in-out infinite;}
+  .mon.m-focused{animation:bob 2.4s ease-in-out infinite;}
+  .mon.m-strained{animation:tremble .18s linear infinite;}
+  .mon.m-fainted{animation:faint 3s ease-in-out infinite;}
+  .mon.m-celebrate{animation:jump .7s ease-in-out infinite;}
+  .mon.m-shocked{animation:shake .12s linear infinite;}
+  .mon.m-sleep{animation:breathe 3.2s ease-in-out infinite;opacity:.5;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  @keyframes bobHappy{0%,100%{transform:translateY(0)}40%{transform:translateY(-11px)}60%{transform:translateY(-6px)}}
+  @keyframes tremble{0%{transform:scale(.94) translate(-1px,0)}50%{transform:scale(.94) translate(1px,-1px)}100%{transform:scale(.94) translate(-1px,0)}}
+  @keyframes faint{0%,100%{transform:rotate(90deg) scale(.88)}50%{transform:rotate(90deg) scale(.855)}}
+  @keyframes jump{0%,100%{transform:translateY(0)}30%{transform:translateY(-18px)}45%{transform:translateY(-11px)}60%{transform:translateY(-18px)}}
+  @keyframes shake{0%{transform:scale(1.05) translateX(-2px)}50%{transform:scale(1.05) translateX(2px)}100%{transform:scale(1.05) translateX(-2px)}}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+  .ov.an-drip{animation:drip 1.4s ease-in infinite;}
+  .ov.an-float{animation:floatup 2.2s ease-out infinite;}
+  .ov.an-tw{animation:twinkle 1.1s ease-in-out infinite;}
+  .ov.an-fl{animation:flick .25s steps(1) infinite;}
+  @keyframes drip{0%{transform:translateY(0);opacity:1}70%{opacity:1}100%{transform:translateY(15px);opacity:0}}
+  @keyframes floatup{0%{transform:translateY(0);opacity:0}30%{opacity:1}100%{transform:translateY(-18px);opacity:0}}
+  @keyframes twinkle{0%,100%{transform:scale(.6);opacity:.4}50%{transform:scale(1);opacity:1}}
+  @keyframes flick{50%{opacity:.15}}
+  .bubble{position:absolute;font-size:11px;font-weight:700;border:2px solid #14160d;border-radius:8px;padding:1px 7px;background:#c9ccbf;z-index:4;white-space:nowrap;}
+  .meter{border:2px solid #14160d;border-radius:7px;overflow:hidden;background:#c9ccbf;}
+  .meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,#14160d 0 3px,#c9ccbf 3px 5px);transition:width .2s;}
+
+  /* left dashboard */
+  .leftcol{width:216px;flex:none;border-right:2px solid #14160d;padding:9px 11px;display:flex;flex-direction:column;}
+  .phead{font-size:16px;font-weight:800;letter-spacing:2px;border-bottom:2px solid #14160d;padding-bottom:4px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:baseline;}
+  .phead .clock{font-size:12px;}
+  .usage{display:flex;flex-direction:column;gap:6px;}
+  .hero{display:flex;align-items:flex-start;gap:8px;}
+  .hero .pct{font-size:60px;line-height:.78;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+  .hero .pct .u{font-size:22px;}
+  .hero .lab{font-size:11px;font-weight:800;letter-spacing:1px;padding-top:7px;line-height:1.15;}
+  .hero.beep{animation:beep .5s steps(1) infinite;}
+  @keyframes beep{50%{opacity:.25}}
+  .resetline{font-size:11px;font-weight:700;opacity:.82;}
+  .wkrow{display:grid;grid-template-columns:34px 1fr 32px;align-items:center;gap:7px;}
+  .wkrow .meter{height:13px;} .wkrow b{font-size:13px;text-align:right;}
+  .statline{font-size:12px;font-weight:700;}
+  .wzone{margin-top:12px;border-top:2px solid #14160d;padding-top:6px;}
+  .wln1{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:800;}
+  .wln1 .feel{font-size:11px;font-weight:600;opacity:.78;}
+  .wln2{font-size:10px;font-weight:600;opacity:.9;white-space:nowrap;margin-top:2px;}
+  .tzone{margin-top:auto;border-top:2px solid #14160d;padding-top:5px;display:flex;flex-direction:column;gap:3px;}
+  .trow{font-size:12px;font-weight:700;} .trow .lbl{font-weight:800;margin-right:6px;}
+
+  /* right buddy */
+  .rightcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;position:relative;}
+  .stage{height:172px;display:flex;align-items:center;justify-content:center;}
+  .ovwrap{position:absolute;inset:0;z-index:3;pointer-events:none;}
+  .rightcol .mon{width:158px;height:158px;}
+  .mood{font-size:12px;font-weight:800;letter-spacing:.5px;}
+  .stats{font-size:12px;font-weight:800;letter-spacing:1px;display:flex;gap:7px;align-items:center;}
+  .expbar{width:120px;height:7px;}
+  .evohint{font-size:9px;font-weight:700;opacity:.7;text-align:center;}
+  .ov{position:absolute;z-index:3;pointer-events:none;}
+  .zzz{position:absolute;z-index:3;font-weight:800;font-style:italic;}
+  /* glitch (Missingno) */
+  .glitch{width:120px;height:120px;background:
+     repeating-linear-gradient(90deg,#14160d 0 4px,#c9ccbf 4px 7px),
+     repeating-linear-gradient(0deg,#14160d 0 3px,transparent 3px 9px);
+     background-blend-mode:difference;image-rendering:pixelated;}
+  /* full-screen overlay (Oak / evolve flash) */
+  .screenfx{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;text-align:center;padding:16px;background:#c9ccbf;}
+  .screenfx.show{display:flex;}
+  .oak{font-size:13px;line-height:1.5;font-weight:700;white-space:pre-wrap;}
+  .flash{position:absolute;inset:0;z-index:8;background:#14160d;display:none;}
+  .flash.run{display:block;animation:flash .15s steps(1) 8;}
+  @keyframes flash{50%{background:#c9ccbf}}
+
+  /* ===== control panel ===== */
+  .panel{width:360px;background:#15181e;border:1px solid #262b34;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:16px;}
+  .panel h2{font-size:13px;color:#62b6ff;font-weight:800;letter-spacing:.5px;margin-bottom:2px;}
+  fieldset{border:1px solid #262b34;border-radius:10px;padding:11px 12px;display:flex;flex-direction:column;gap:9px;}
+  legend{font-size:11px;font-weight:800;color:#9aa0ad;padding:0 6px;letter-spacing:1px;}
+  .ctl{display:flex;align-items:center;gap:8px;font-size:12px;}
+  .ctl label{width:74px;flex:none;color:#b8bdc8;}
+  .ctl input[type=range]{flex:1;accent-color:#62b6ff;}
+  .ctl .val{width:46px;text-align:right;font-variant-numeric:tabular-nums;color:#e8e9ed;font-weight:700;}
+  select,.btn{background:#1d222b;color:#e8e9ed;border:1px solid #313846;border-radius:7px;padding:5px 8px;font-size:12px;font-weight:600;cursor:pointer;}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;}
+  .btn:hover{border-color:#62b6ff;}
+  .btn.sel{background:#62b6ff;color:#0d0f13;border-color:#62b6ff;}
+  .seg{display:flex;gap:6px;flex-wrap:wrap;}
+  .note{font-size:11px;color:#7a8290;line-height:1.4;}
+</style></head>
+<body>
+
+  <div class="col-device">
+    <h1>🐾 Claude Pokémon Buddy</h1>
+    <div class="bezel">
+      <div class="rlcd">
+        <!-- left dashboard -->
+        <div class="leftcol cjk">
+          <div class="phead"><span>CLAUDE</span><span class="clock" id="clock">14:23</span></div>
+          <div class="usage">
+            <div class="hero" id="hero"><span class="pct"><span id="p5h">72</span><span class="u">%</span></span><span class="lab">5H<br>WINDOW</span></div>
+            <div class="resetline" id="reset5h">↺ resets in 2h 14m</div>
+            <div class="wkrow"><span class="glabel" style="font-size:10px;font-weight:800">WEEK</span><div class="meter"><i id="wkbar" style="width:41%"></i></div><b id="pweek">41%</b></div>
+            <div class="statline" id="todayline">today $4.10 · 5.3M tok</div>
+          </div>
+          <div class="wzone">
+            <div class="wln1"><span id="wxicon"></span><span id="wxcond">多云 19°</span><span class="feel" id="wxfeel">体感17°</span></div>
+            <div class="wln2" id="wxdetail">最高22° 最低14° · 东南风3级 · 降水30%</div>
+          </div>
+          <div class="tzone">
+            <div class="trow"><span class="lbl">室内</span><span id="inTH">23.4°C · 56%</span></div>
+            <div class="trow"><span class="lbl">室外</span><span id="outTH">19.0°C · 64%</span></div>
+          </div>
+        </div>
+        <!-- right buddy -->
+        <div class="rightcol">
+          <div class="bubble" id="bubble" style="top:10px;right:12px;">Pika!</div>
+          <div class="ovwrap" id="ovwrap"></div>
+          <div class="stage">
+            <img class="mon m-focused" id="sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/133.png">
+            <div class="glitch" id="glitch" style="display:none"></div>
+          </div>
+          <span class="mood" id="moodlabel">● focused</span>
+          <span class="stats"><span id="lvl">Lv.7</span> <span id="hearts">♥♥♥♡♡</span> <span id="streak">🔥6d</span></span>
+          <div class="meter expbar"><i id="expbar" style="width:40%"></i></div>
+          <div class="evohint" id="evohint"></div>
+        </div>
+        <div class="flash" id="flash"></div>
+        <div class="screenfx cjk" id="screenfx"><div class="oak" id="oaktext"></div></div>
+      </div>
+    </div>
+    <p class="hint">真实尺寸 400×300 单色屏预览。拖右侧控件，buddy 与仪表盘当场反应。这一层 ≈ 最终 host 渲染层。</p>
+  </div>
+
+  <!-- ===== control console ===== -->
+  <div class="panel">
+    <h2>控制台（= dashboard 雏形）</h2>
+
+    <fieldset><legend>用量模拟</legend>
+      <div class="ctl"><label>5h 窗口</label><input type="range" id="s5h" min="0" max="100" value="72"><span class="val" id="v5h">72%</span></div>
+      <div class="ctl"><label>周窗口</label><input type="range" id="sweek" min="0" max="100" value="41"><span class="val" id="vweek">41%</span></div>
+      <div class="ctl"><label>今日 $</label><input type="range" id="stoday" min="0" max="50" step="0.1" value="4.1"><span class="val" id="vtoday">$4.1</span></div>
+      <div class="ctl"><label>streak</label><input type="range" id="sstreak" min="0" max="120" value="6"><span class="val" id="vstreak">6d</span></div>
+      <div class="note">5h 窗口越高，buddy 越吃力(80%+冒汗、100%濒死)。今日 $ 飙到 30+ 触发"震惊放电"。</div>
+    </fieldset>
+
+    <fieldset><legend>养成</legend>
+      <div class="ctl"><label>等级 Lv</label><input type="range" id="slvl" min="1" max="50" value="7"><span class="val" id="vlvl">7</span></div>
+      <div class="ctl"><label>EXP</label><input type="range" id="sexp" min="0" max="100" value="40"><span class="val" id="vexp">40%</span></div>
+      <div class="ctl"><label>亲密度 ♥</label><input type="range" id="sbond" min="0" max="5" value="3"><span class="val" id="vbond">3</span></div>
+    </fieldset>
+
+    <fieldset><legend>调性玩法</legend>
+      <div class="seg" id="toneseg">
+        <button class="btn" data-tone="gentle">温柔陪伴</button>
+        <button class="btn" data-tone="stakes">stakes-lite</button>
+        <button class="btn sel" data-tone="hardcore">硬核挑战</button>
+      </div>
+      <button class="btn" id="btnNeglect">▶ 模拟"断更一周"看后果</button>
+      <div class="note" id="tonenote"></div>
+    </fieldset>
+
+    <fieldset><legend>宝可梦（任意 · 含伊布全进化）</legend>
+      <div class="ctl"><label>选择</label>
+        <select id="monsel">
+          <optgroup label="伊布家族">
+            <option value="133">伊布 Eevee</option>
+            <option value="196">太阳伊布 Espeon</option>
+            <option value="197">月亮伊布 Umbreon</option>
+            <option value="700">仙子伊布 Sylveon</option>
+            <option value="470">叶伊布 Leafeon</option>
+            <option value="471">冰伊布 Glaceon</option>
+            <option value="134">水伊布 Vaporeon</option>
+            <option value="135">雷伊布 Jolteon</option>
+            <option value="136">火伊布 Flareon</option>
+          </optgroup>
+          <optgroup label="皮卡丘线">
+            <option value="172">皮丘</option><option value="25">皮卡丘</option><option value="26">雷丘</option>
+          </optgroup>
+          <optgroup label="御三家">
+            <option value="1">妙蛙种子</option><option value="4">小火龙</option><option value="7">杰尼龟</option>
+          </optgroup>
+          <optgroup label="其它">
+            <option value="143">卡比兽</option><option value="6">喷火龙</option><option value="448">路卡利欧</option>
+          </optgroup>
+        </select>
+      </div>
+      <label class="ctl"><input type="checkbox" id="shiny"> ✦ 闪光个体（1/8192 彩蛋）</label>
+      <div class="note">伊布→选不同进化看分支；闪光勾上看 sparkle。</div>
+    </fieldset>
+
+    <fieldset><legend>环境（真实世界 → 游戏机制）</legend>
+      <div class="ctl"><label>时刻</label><input type="range" id="shour" min="0" max="23" value="14"><span class="val" id="vhour">14:00</span></div>
+      <div class="ctl"><label>天气</label>
+        <select id="wxsel"><option value="sun">晴</option><option value="cloud" selected>多云</option><option value="overcast">阴</option><option value="rain">小雨</option><option value="snow">雪</option><option value="fog">雾</option></select>
+      </div>
+      <div class="ctl"><label>室内温</label><input type="range" id="sinT" min="0" max="40" step="0.1" value="23.4"><span class="val" id="vinT">23.4°</span></div>
+      <div class="ctl"><label>室外温</label><input type="range" id="soutT" min="-10" max="40" step="0.5" value="19"><span class="val" id="voutT">19°</span></div>
+      <div class="note" id="envnote"></div>
+    </fieldset>
+
+    <fieldset><legend>心情（自动随用量；可手动覆盖）</legend>
+      <div class="btns" id="moodbtns">
+        <button class="btn" data-m="auto">自动</button>
+        <button class="btn" data-m="happy">元气</button>
+        <button class="btn" data-m="focused">专注</button>
+        <button class="btn" data-m="strained">吃力</button>
+        <button class="btn" data-m="fainted">力竭</button>
+        <button class="btn" data-m="celebrate">庆祝</button>
+        <button class="btn" data-m="shocked">震惊</button>
+        <button class="btn" data-m="sleep">睡觉</button>
+      </div>
+    </fieldset>
+
+    <fieldset><legend>彩蛋触发</legend>
+      <div class="btns">
+        <button class="btn" id="egEvolve">✨ 进化动画</button>
+        <button class="btn" id="egOak">📜 大木开场白</button>
+        <button class="btn" id="egMissingno">▦ Missingno.</button>
+        <button class="btn" id="egBeep">🔔 低血量滴滴</button>
+      </div>
+      <div class="note">真机：进化/彩蛋配方波音效；这里只演示画面。</div>
+    </fieldset>
+  </div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var SPRITE='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/';
+  var st={p5h:72,pweek:41,today:4.1,streak:6,lvl:7,exp:40,bond:3,tone:'hardcore',mon:'133',shiny:false,hour:14,wx:'cloud',inT:23.4,outT:19,moodOverride:'auto',glitch:false};
+  var lastMood=null,lastGlitch=null;
+
+  var WX={sun:{i:sun(),c:'晴'},cloud:{i:cloud(),c:'多云'},overcast:{i:cloud(),c:'阴'},rain:{i:rain(),c:'小雨'},snow:{i:snow(),c:'雪'},fog:{i:cloud(),c:'雾'}};
+  function sun(){return '<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#14160d"/><g stroke="#14160d" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="22"/><line x1="2" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="6.7" y2="6.7"/><line x1="17.3" y1="17.3" x2="19" y2="19"/><line x1="19" y1="5" x2="17.3" y2="6.7"/><line x1="6.7" y1="17.3" x2="5" y2="19"/></g></svg>';}
+  function cloud(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#14160d"><path d="M7 18h10a4 4 0 0 0 .3-8 6 6 0 0 0-11.6 1.2A3.5 3.5 0 0 0 7 18z"/></svg>';}
+  function rain(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#14160d"><path d="M6 15h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 15z"/><g stroke="#14160d" stroke-width="1.6" stroke-linecap="round"><line x1="9" y1="18" x2="8" y2="21"/><line x1="13" y1="18" x2="12" y2="21"/><line x1="17" y1="18" x2="16" y2="21"/></g></svg>';}
+  function snow(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#14160d"><path d="M6 14h11a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.7.6A3 3 0 0 0 6 14z"/><g fill="#14160d"><circle cx="9" cy="19" r="1.3"/><circle cx="13" cy="20" r="1.3"/><circle cx="16" cy="19" r="1.3"/></g></svg>';}
+
+  var MOODS={
+    happy:{label:'● happy',bubble:'♪',ov:['star1'],tf:'',op:1},
+    focused:{label:'● focused',bubble:'…',ov:[],tf:'',op:1},
+    strained:{label:'● tired',bubble:'撑住…',ov:['sweatA','sweatB'],tf:'scale(.94)',op:1},
+    fainted:{label:'✕ rate-limited',bubble:'额度用尽',ov:['zzzS'],tf:'rotate(90deg) scale(.88)',op:.9},
+    celebrate:{label:'★ refreshed',bubble:'RESET!',ov:['star1','star2','star3'],tf:'translateY(-8px)',op:1},
+    shocked:{label:'⚡ 花费飙升',bubble:'!!',ov:['boltA','boltB'],tf:'scale(1.05)',op:1},
+    sleep:{label:'· 休息中',bubble:'',ov:['zzzBig'],tf:'',op:.5}
+  };
+  function ovHTML(k){
+    var bolt='<svg width="15" height="15" viewBox="0 0 24 24" fill="#14160d"><polygon points="13,2 4,14 11,14 9,22 20,9 13,9"/></svg>';
+    var star='<svg width="13" height="13" viewBox="0 0 24 24" fill="#14160d"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg>';
+    var drop='<svg width="11" height="14" viewBox="0 0 16 20" fill="#14160d"><path d="M8 1 C8 1 1.5 11 1.5 14 a6.5 6.5 0 0 0 13 0 C14.5 11 8 1 8 1 Z"/></svg>';
+    var M={
+      sweatA:['top:26%;right:30%',drop],sweatB:['top:34%;right:24%','<svg width="8" height="10" viewBox="0 0 16 20" fill="#14160d"><path d="M8 1 C8 1 1.5 11 1.5 14 a6.5 6.5 0 0 0 13 0 C14.5 11 8 1 8 1 Z"/></svg>'],
+      boltA:['top:24%;left:24%',bolt],boltB:['top:32%;right:24%',bolt],
+      star1:['top:20%;left:24%',star],star2:['top:50%;right:22%',star],star3:['bottom:30%;left:30%',star],
+      zzzS:['top:24%;right:26%','<span style="font-style:italic;font-weight:800;font-size:16px">z</span>'],
+      zzzBig:['top:22%;right:26%','<span style="font-style:italic;font-weight:800;font-size:20px">Z<span style="font-size:13px">z</span></span>']
+    };
+    if(!M[k])return '';
+    var anim={sweatA:'an-drip',sweatB:'an-drip',boltA:'an-fl',boltB:'an-fl',star1:'an-tw',star2:'an-tw',star3:'an-tw',zzzS:'an-float',zzzBig:'an-float'}[k]||'';
+    return '<span class="ov '+anim+'" style="'+M[k][0]+'">'+M[k][1]+'</span>';
+  }
+
+  function deriveMood(){
+    if(st.today>=30)return 'shocked';
+    if(st.p5h>=100)return 'fainted';
+    if(st.p5h>=80)return 'strained';
+    if(st.p5h>=50)return 'focused';
+    return 'happy';
+  }
+  function fmtClock(h){return (h<10?'0'+h:h)+':23';}
+  function isDay(h){return h>=6&&h<18;}
+
+  function update(){
+    // dashboard
+    $('p5h').textContent=st.p5h;
+    $('wkbar').style.width=st.pweek+'%'; $('pweek').textContent=st.pweek+'%';
+    $('todayline').textContent='today $'+st.today.toFixed(2)+' · 5.3M tok';
+    $('clock').textContent=fmtClock(st.hour)+(isDay(st.hour)?' ☀':' ☾');
+    var w=WX[st.wx]; $('wxicon').innerHTML=w.i; $('wxcond').textContent=w.c+' '+Math.round(st.outT)+'°';
+    $('inTH').textContent=st.inT.toFixed(1)+'°C · 56%'; $('outTH').textContent=st.outT.toFixed(1)+'°C · 64%';
+    $('hero').classList.toggle('beep', st.p5h>=95);
+
+    // buddy (稳定元素 + 类切换，避免动画每 tick 重启)
+    var mood = st.moodOverride==='auto'?deriveMood():st.moodOverride;
+    var m=MOODS[mood];
+    var spr=$('sprite'), gl=$('glitch');
+    if(st.glitch){ spr.style.display='none'; gl.style.display='block'; }
+    else{
+      gl.style.display='none'; spr.style.display='';
+      var url=SPRITE+st.mon+'.png'; if(spr.getAttribute('src')!==url) spr.setAttribute('src',url);
+      spr.className='mon m-'+mood+(st.shiny?' shiny':'');
+    }
+    $('moodlabel').textContent=m.label;
+    $('bubble').textContent=m.bubble; $('bubble').style.display=(m.bubble&&!st.glitch)?'block':'none';
+    if(mood!==lastMood || st.glitch!==lastGlitch){
+      $('ovwrap').innerHTML = st.glitch?'':m.ov.map(ovHTML).join('');
+      lastMood=mood; lastGlitch=st.glitch;
+    }
+    // stats
+    $('lvl').textContent='Lv.'+st.lvl;
+    $('hearts').textContent='♥♥♥♥♥'.slice(0,st.bond)+'♡♡♡♡♡'.slice(0,5-st.bond);
+    $('streak').textContent='🔥'+st.streak+'d';
+    $('expbar').style.width=st.exp+'%';
+    // evolution hint (Eevee)
+    var hint='';
+    if(st.mon==='133'){ hint = st.bond>=4 ? ('亲密将满 → '+(isDay(st.hour)?'白天进化 太阳伊布':'夜晚进化 月亮伊布')) : '多陪它涨亲密 → 进化'; }
+    $('evohint').textContent=hint;
+    // env note
+    $('envnote').textContent = (st.outT<=5?'室外很冷 → 可触发 冰伊布(Glaceon)':'') + (st.wx==='rain'?'  下雨 → 雨系进化/GO 水电虫加成':'') + (st.wx==='snow'?'  下雪 → 冰伊布环境':'');
+    // tone note
+    var TN={gentle:'温柔：只升不降，断更只是失落，回来即暖。',stakes:'stakes-lite：会变蔫/退化但可逆，永不真失去。',hardcore:'硬核：断更衰减→生病→退化→离家(可找回)；streak 可攒护盾。'};
+    $('tonenote').textContent=TN[st.tone];
+  }
+
+  // wiring
+  function bindRange(id,key,fmt,after){ $(id).oninput=function(){ st[key]=parseFloat(this.value); $(id.replace('s','v')).textContent=fmt(st[key]); if(after)after(); update(); }; }
+  bindRange('s5h','p5h',function(v){return Math.round(v)+'%';},function(){st.p5h=Math.round(st.p5h);});
+  bindRange('sweek','pweek',function(v){return Math.round(v)+'%';},function(){st.pweek=Math.round(st.pweek);});
+  bindRange('stoday','today',function(v){return '$'+v.toFixed(1);});
+  bindRange('sstreak','streak',function(v){return Math.round(v)+'d';},function(){st.streak=Math.round(st.streak);});
+  bindRange('slvl','lvl',function(v){return Math.round(v);},function(){st.lvl=Math.round(st.lvl);});
+  bindRange('sexp','exp',function(v){return Math.round(v)+'%';},function(){st.exp=Math.round(st.exp);});
+  bindRange('sbond','bond',function(v){return Math.round(v);},function(){st.bond=Math.round(st.bond);});
+  bindRange('shour','hour',function(v){return (v<10?'0'+v:v)+':00';},function(){st.hour=Math.round(st.hour);});
+  bindRange('sinT','inT',function(v){return v.toFixed(1)+'°';});
+  bindRange('soutT','outT',function(v){return Math.round(v)+'°';});
+
+  $('monsel').onchange=function(){st.mon=this.value;st.glitch=false;update();};
+  $('shiny').onchange=function(){st.shiny=this.checked;update();};
+  $('wxsel').onchange=function(){st.wx=this.value;update();};
+
+  document.querySelectorAll('#toneseg .btn').forEach(function(b){b.onclick=function(){
+    document.querySelectorAll('#toneseg .btn').forEach(function(x){x.classList.remove('sel');});
+    b.classList.add('sel'); st.tone=b.dataset.tone; update();
+  };});
+  document.querySelectorAll('#moodbtns .btn').forEach(function(b){b.onclick=function(){
+    document.querySelectorAll('#moodbtns .btn').forEach(function(x){x.classList.remove('sel');});
+    b.classList.add('sel'); st.moodOverride=b.dataset.m; st.glitch=false; update();
+  };});
+
+  $('btnNeglect').onclick=function(){
+    var msg={gentle:'😌 温柔：streak 归零，buddy 有点想你，回来抱一下就好。',
+             stakes:'😟 stakes-lite：变蔫+退化一阶，但你回来几天就复原、重新进化。',
+             hardcore:'💀 硬核：streak 清零→生病(骷髅)→退化→濒临离家出走！(护盾本可抵一次)'};
+    alert(msg[st.tone]);
+  };
+
+  // easter eggs
+  $('egEvolve').onclick=function(){ var f=$('flash'); f.classList.add('run'); setTimeout(function(){f.classList.remove('run');},1300); };
+  $('egMissingno').onclick=function(){ st.glitch=!st.glitch; $('bubble').textContent='▟▖ ?'; update(); $('bubble').style.display=st.glitch?'block':'none'; };
+  $('egBeep').onclick=function(){ st.p5h=98; $('s5h').value=98; $('v5h').textContent='98%'; update(); };
+  $('egOak').onclick=function(){
+    var fx=$('screenfx'),t=$('oaktext'),full='欢迎来到\n宝可梦的世界！\n\n我是大木博士。\n这个世界住着\n被称为宝可梦的生物。\n\n你的宝可梦传奇\n即将展开！\nLet\'s go!';
+    fx.classList.add('show'); t.textContent=''; var i=0;
+    var iv=setInterval(function(){ t.textContent=full.slice(0,++i); if(i>=full.length){clearInterval(iv); setTimeout(function(){fx.classList.remove('show');},1800);} },45);
+  };
+
+  update();
+})();
+</script>
+</body></html>

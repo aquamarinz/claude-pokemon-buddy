@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Pokémon Buddy — 宝可梦心情状态表</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0f1115;color:#e8e9ed;font-family:-apple-system,system-ui,sans-serif;
+    padding:28px 20px 70px;display:flex;flex-direction:column;align-items:center;}
+  h1{font-size:19px;font-weight:800;margin-bottom:6px;text-align:center;}
+  .sub{font-size:13px;color:#9aa0ad;text-align:center;max-width:700px;margin-bottom:22px;line-height:1.5;}
+  .grid{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;max-width:880px;}
+  .cell{display:flex;flex-direction:column;align-items:center;}
+  .cap{margin-top:9px;text-align:center;max-width:180px;}
+  .cap b{font-size:14px;display:block;}
+  .cap span{font-size:11px;color:#9aa0ad;}
+
+  /* mini buddy screen = the right column region, monochrome paper */
+  .mini{width:180px;height:234px;background:#c9ccbf;color:#14160d;border:5px solid #2a2c22;border-radius:10px;
+    position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    font-family:'Courier New',ui-monospace,monospace;box-shadow:inset 0 0 0 2px #b5b8ac;}
+  .mon{image-rendering:pixelated;filter:grayscale(1) contrast(1.9) brightness(1.05);width:118px;height:118px;}
+  .bubble{position:absolute;font-size:11px;font-weight:700;border:2px solid #14160d;border-radius:8px;padding:1px 7px;background:#c9ccbf;z-index:3;}
+  .mood{font-size:12px;font-weight:800;letter-spacing:.5px;z-index:3;}
+  .mood .ic{font-weight:800;}
+  .ov{position:absolute;z-index:2;}
+  svg{display:block;}
+  .zzz{position:absolute;z-index:2;font-weight:800;font-style:italic;color:#14160d;line-height:1;}
+  .strain line{stroke:#14160d;stroke-width:2;stroke-linecap:round;}
+</style></head>
+<body>
+  <h1>🐾 宝可梦心情状态表（同一只皮卡丘 · 叠加层区分）</h1>
+  <p class="sub">每个状态 = 基础精灵 + 单色叠加符号 + 姿势/气泡。这套对任何切换来的宝可梦都通用。括号里是触发条件（主要看 5h 窗口用量）。</p>
+
+  <div class="grid">
+
+    <!-- happy -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:14px;right:14px;">Pika♪</div>
+        <span class="ov" style="top:26px;left:24px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="#14160d"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg></span>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="ic">●</span> happy</span>
+      </div>
+      <div class="cap"><b>happy / 元气</b><span>5h 0–50%，额度充足</span></div>
+    </div>
+
+    <!-- focused -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:14px;right:18px;">…</div>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png">
+        <span class="mood"><span class="ic">●</span> focused</span>
+      </div>
+      <div class="cap"><b>focused / 专注</b><span>5h 50–80%，干活中（默认）</span></div>
+    </div>
+
+    <!-- strained -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:12px;right:14px;">撑住…</div>
+        <!-- sweat drops -->
+        <span class="ov" style="top:40px;right:40px;"><svg width="12" height="15" viewBox="0 0 16 20" fill="#14160d"><path d="M8 1 C8 1 1.5 11 1.5 14 a6.5 6.5 0 0 0 13 0 C14.5 11 8 1 8 1 Z"/></svg></span>
+        <span class="ov" style="top:58px;right:30px;"><svg width="9" height="11" viewBox="0 0 16 20" fill="#14160d"><path d="M8 1 C8 1 1.5 11 1.5 14 a6.5 6.5 0 0 0 13 0 C14.5 11 8 1 8 1 Z"/></svg></span>
+        <!-- strain lines -->
+        <svg class="ov strain" style="top:46px;left:30px;" width="20" height="18"><line x1="2" y1="4" x2="14" y2="2"/><line x1="2" y1="10" x2="14" y2="9"/><line x1="2" y1="16" x2="14" y2="16"/></svg>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" style="transform:scale(.94)">
+        <span class="mood"><span class="ic">●</span> tired</span>
+      </div>
+      <div class="cap"><b>strained / 吃力</b><span>5h 80–99%，逼近限额（冒汗）</span></div>
+    </div>
+
+    <!-- fainted -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:12px;left:12px;">额度用尽 · 2h14m</div>
+        <span class="zzz" style="top:40px;right:24px;font-size:18px;">z</span>
+        <span class="zzz" style="top:30px;right:38px;font-size:13px;">z</span>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" style="transform:rotate(90deg) scale(.92);opacity:.9">
+        <span class="mood"><span class="ic">✕</span> rate-limited</span>
+      </div>
+      <div class="cap"><b>fainted / 力竭</b><span>5h 100%，限额（躺倒）</span></div>
+    </div>
+
+    <!-- celebrate -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:12px;right:16px;">RESET!</div>
+        <span class="ov" style="top:24px;left:22px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg></span>
+        <span class="ov" style="top:60px;right:20px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="#14160d"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg></span>
+        <span class="ov" style="bottom:70px;left:30px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="#14160d"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg></span>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" style="transform:translateY(-8px)">
+        <span class="mood"><span class="ic">★</span> refreshed</span>
+      </div>
+      <div class="cap"><b>celebrate / 复活</b><span>窗口 reset 那一刻（庆祝）</span></div>
+    </div>
+
+    <!-- shocked -->
+    <div class="cell">
+      <div class="mini">
+        <div class="bubble" style="top:12px;right:20px;">!!</div>
+        <span class="ov" style="top:36px;left:26px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="#14160d"><polygon points="13,2 4,14 11,14 9,22 20,9 13,9"/></svg></span>
+        <span class="ov" style="top:48px;right:26px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="#14160d"><polygon points="13,2 4,14 11,14 9,22 20,9 13,9"/></svg></span>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" style="transform:scale(1.04)">
+        <span class="mood"><span class="ic">⚡</span> 花费飙升</span>
+      </div>
+      <div class="cap"><b>shocked / 震惊</b><span>今日花费异常飙升（放电）</span></div>
+    </div>
+
+    <!-- sleep -->
+    <div class="cell">
+      <div class="mini">
+        <span class="zzz" style="top:30px;right:30px;font-size:20px;">Z</span>
+        <span class="zzz" style="top:18px;right:48px;font-size:14px;">z</span>
+        <span class="zzz" style="top:10px;right:62px;font-size:10px;">z</span>
+        <img class="mon" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" style="opacity:.5">
+        <span class="mood"><span class="ic">·</span> 休息中</span>
+      </div>
+      <div class="cap"><b>sleep / 睡觉</b><span>深夜 或 长时间无 Claude 活动</span></div>
+    </div>
+
+  </div>
+</body></html>
