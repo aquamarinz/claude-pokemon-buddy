@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pokédex Console - Claude Buddy</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --panel: #1b1e24;
+      --line2: #3a4049;
+      --red: #e23b2d;
+      --red-dk: #9e2418;
+      --grn: #9bbc0f;
+      --grn-dk: #5d7a10;
+      --lcd: #c6d62e;
+      --ink: #ece9d8;
+      --dim: #8d93a0;
+      --lens: #3aa6e6;
+      --paper: #c9ccbf;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      padding: 22px;
+      background:
+        radial-gradient(1200px 600px at 80% -10%, #1c2733 0%, transparent 60%),
+        repeating-linear-gradient(0deg, #0e0f12 0 2px, #121317 2px 4px);
+      color: var(--ink);
+      font-family: "Courier New", "PingFang SC", "Microsoft YaHei", ui-monospace, monospace;
+    }
+
+    .px {
+      font-family: Monaco, Consolas, ui-monospace, monospace;
+      font-size: 11px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .deck {
+      max-width: 1240px;
+      margin: 0 auto;
+      border: 2px solid var(--red-dk);
+      border-radius: 14px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #191c22, #15171c);
+      box-shadow: 0 30px 80px #0008, inset 0 1px 0 #ffffff0a;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 16px 20px;
+      background: linear-gradient(100deg, var(--red), var(--red-dk));
+      border-bottom: 3px solid #00000040;
+    }
+
+    .lens {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      flex: none;
+      position: relative;
+      background: radial-gradient(circle at 34% 30%, #bfe6ff 0%, var(--lens) 38%, #155a8a 75%, #0c3a5c 100%);
+      box-shadow: 0 0 0 4px #ffffff20, 0 0 0 6px #00000040, 0 4px 10px #0007;
+    }
+
+    .lens::after {
+      content: "";
+      position: absolute;
+      top: 8px;
+      left: 11px;
+      width: 12px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ffffffcc;
+      filter: blur(1px);
+    }
+
+    .brand .t {
+      color: #fff;
+      text-shadow: 2px 2px 0 #00000050;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .brand .s {
+      font-size: 18px;
+      color: #ffd9d2;
+      line-height: .9;
+    }
+
+    .leds {
+      margin-left: auto;
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .led {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 16px;
+      color: #ffe;
+    }
+
+    .led i {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .led.ok i { background: #5ef07a; color: #5ef07a; }
+    .led.warn i { background: #ffd34d; color: #ffd34d; }
+
+    .main {
+      display: grid;
+      grid-template-columns: 520px 1fr;
+      gap: 18px;
+      padding: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 1040px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    .leftstack,
+    .rightstack {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line2);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--red);
+    }
+
+    .panel.g::before { background: var(--grn); }
+
+    .phd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px 10px;
+      border-bottom: 1px dashed var(--line2);
+    }
+
+    .phd .tag {
+      font-size: 16px;
+      color: var(--dim);
+      text-align: right;
+    }
+
+    .pbody { padding: 14px; }
+
+    .bay {
+      background: linear-gradient(165deg, #2b3a18, #1c260f);
+      border-color: #3c4a22;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 11px;
+      box-shadow: inset 0 0 40px #0006;
+    }
+
+    .baytop {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .baytop .px { color: #cfe06a; }
+
+    .livedot {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 16px;
+      color: #ff7a6c;
+    }
+
+    .livedot i {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ff5a47;
+      box-shadow: 0 0 8px #ff5a47;
+    }
+
+    .screenwrap {
+      width: min(100%, 463px);
+      aspect-ratio: 4 / 3;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      background: #11130c;
+      border: 7px solid #11130c;
+      border-radius: 9px;
+      box-shadow: inset 0 0 0 2px #b5b8ac, 0 6px 18px #0009;
+    }
+
+    #live {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      background: var(--paper);
+    }
+
+    .live-stats {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .chip {
+      min-width: 0;
+      padding: 8px 10px;
+      background: #10140b;
+      border: 1px solid #3c4a22;
+      border-radius: 6px;
+      color: #cfe06a;
+      font-size: 16px;
+    }
+
+    .chip span {
+      display: block;
+      color: var(--dim);
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .bh {
+      display: flex;
+      gap: 18px;
+    }
+
+    .port {
+      width: 132px;
+      height: 132px;
+      flex: none;
+      background: #0f1115;
+      border: 2px solid var(--grn-dk);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+
+    .port img {
+      width: 114px;
+      height: 114px;
+      image-rendering: pixelated;
+      filter: grayscale(.25) contrast(1.1);
+    }
+
+    .dexno {
+      position: absolute;
+      top: 5px;
+      left: 7px;
+      font-size: 14px;
+      color: var(--dim);
+    }
+
+    .info { flex: 1; min-width: 0; }
+    .nm { font-size: 30px; line-height: .95; overflow-wrap: anywhere; }
+
+    .row1 {
+      display: flex;
+      gap: 14px;
+      align-items: baseline;
+      margin: 6px 0 9px;
+      flex-wrap: wrap;
+    }
+
+    .lv { font-size: 21px; color: var(--lcd); }
+    .hearts { color: var(--red); font-size: 19px; }
+    .moodbig { font-size: 19px; }
+    .moodbig b { color: var(--grn); }
+
+    .kv {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 5px 14px;
+      font-size: 17px;
+      margin-top: 10px;
+    }
+
+    .kv .k { color: var(--dim); }
+    .kv .v { text-align: right; overflow-wrap: anywhere; }
+
+    .ivbars {
+      display: flex;
+      gap: 5px;
+      margin-top: 11px;
+    }
+
+    .ivb {
+      flex: 1;
+      height: 34px;
+      background: #0f1115;
+      border: 1px solid var(--line2);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ivb i {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(0deg, var(--grn-dk), var(--grn));
+    }
+
+    .ivb span {
+      position: absolute;
+      top: 3px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 12px;
+      color: #cfe06a;
+    }
+
+    .sig {
+      margin-top: 11px;
+      font-size: 18px;
+      color: var(--lcd);
+      font-style: italic;
+    }
+
+    .badges,
+    .box {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badges { margin-top: 13px; }
+
+    .badge,
+    .slot {
+      background: #0f1115;
+      border: 2px solid var(--grn-dk);
+      color: var(--grn);
+      display: grid;
+      place-items: center;
+    }
+
+    .badge {
+      min-width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      padding: 0 7px;
+      font-size: 13px;
+    }
+
+    .slot {
+      width: 58px;
+      height: 58px;
+      border-color: var(--line2);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .slot.sel { border-color: var(--grn); box-shadow: 0 0 0 2px var(--grn-dk); }
+    .slot img { width: 48px; height: 48px; image-rendering: pixelated; filter: grayscale(1) contrast(1.3); }
+
+    .goal {
+      margin-top: 15px;
+      border-top: 1px dashed var(--line2);
+      padding-top: 13px;
+    }
+
+    .goal .gl {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 17px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+
+    .goal .gl b { color: var(--lcd); }
+
+    .gbar {
+      height: 16px;
+      background: #0f1115;
+      border: 1px solid var(--line2);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .gbar i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--grn-dk), var(--grn));
+    }
+
+    .tl { position: relative; padding-left: 19px; }
+    .tl::before { content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px; width: 2px; background: var(--line2); }
+    .tle { position: relative; font-size: 17px; margin: 10px 0; }
+    .tle::before { content: ""; position: absolute; left: -17px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--grn); box-shadow: 0 0 7px var(--grn); }
+    .tle .d { color: var(--dim); font-size: 15px; margin-right: 7px; }
+
+    .secs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .sec {
+      aspect-ratio: 1;
+      background: #0f1115;
+      border: 2px solid var(--grn-dk);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 14px;
+      color: var(--grn);
+      text-align: center;
+      padding: 4px;
+    }
+
+    .sec .ic { font-size: 22px; }
+    .sec.lock { border-color: var(--line2); color: #3f444d; }
+
+    .settings-wrap { padding: 0 20px 20px; }
+
+    .setgrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 30px;
+    }
+
+    @media (max-width: 760px) {
+      body { padding: 10px; }
+      .topbar { align-items: flex-start; }
+      .main { padding: 12px; }
+      .bh { flex-direction: column; }
+      .setgrid, .live-stats { grid-template-columns: 1fr; }
+      .secs { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      margin: 10px 0;
+    }
+
+    .row label {
+      width: 100px;
+      flex: none;
+      color: var(--dim);
+    }
+
+    .row input {
+      min-width: 0;
+      flex: 1;
+      background: #0f1115;
+      border: 1px solid var(--line2);
+      color: var(--ink);
+      font: inherit;
+      font-size: 17px;
+      padding: 6px 9px;
+      border-radius: 6px;
+    }
+
+    .row input[type=range] {
+      padding: 0;
+      accent-color: var(--grn);
+    }
+
+    .row .v {
+      width: 42px;
+      text-align: right;
+      color: var(--lcd);
+    }
+
+    .lockchip {
+      font-size: 15px;
+      color: var(--dim);
+      border: 1px solid var(--line2);
+      border-radius: 5px;
+      padding: 3px 9px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    button {
+      border: 1px solid var(--grn-dk);
+      border-radius: 6px;
+      background: #10140b;
+      color: var(--grn);
+      font: inherit;
+      font-size: 17px;
+      padding: 7px 12px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--grn); }
+    #settings-status { min-height: 20px; color: var(--lcd); font-size: 16px; }
+    #settings-status.error { color: #ff7a6c; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 20px;
+      border-top: 1px solid var(--line2);
+      font-size: 16px;
+      color: var(--dim);
+      background: #101216;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div class="lens"></div>
+      <div class="brand">
+        <span class="t px">POKéDEX CONSOLE</span>
+        <span class="s">claude buddy · 训练师图鉴</span>
+      </div>
+      <div class="leds">
+        <span class="led ok"><i></i>LOCAL · 127.0.0.1</span>
+        <span class="led ok"><i></i>ccusage <span id="usage-modelled">--</span></span>
+        <span class="led warn"><i></i>synced <span id="last-sync">--</span></span>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="leftstack">
+        <section class="bay panel">
+          <div class="baytop">
+            <span class="px">LIVE SCREEN · 400x300</span>
+            <span class="livedot"><i></i>LIVE</span>
+          </div>
+          <div class="screenwrap">
+            <img id="live" alt="Live device preview">
+          </div>
+          <div class="live-stats">
+            <div class="chip"><span>5H WINDOW</span><strong id="usage-p5h">--</strong></div>
+            <div class="chip"><span>WEEK</span><strong id="usage-pweek">--</strong></div>
+            <div class="chip"><span>TODAY</span><strong id="usage-today">--</strong></div>
+            <div class="chip"><span>WEATHER</span><strong id="weather-line">--</strong></div>
+            <div class="chip"><span>ROOM</span><strong id="room-line">--</strong></div>
+            <div class="chip"><span>STREAK</span><strong id="usage-streak">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel g">
+          <div class="phd">
+            <span class="px">JOURNEY · 旅程</span>
+            <span class="tag" id="journey-count">--</span>
+          </div>
+          <div class="pbody">
+            <div class="tl" id="journey"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="rightstack">
+        <section class="panel g">
+          <div class="phd">
+            <span class="px">MY BUDDY</span>
+            <span class="tag" id="difficulty">--</span>
+          </div>
+          <div class="pbody">
+            <div class="bh">
+              <div class="port">
+                <span class="dexno" id="buddy-dex">#---</span>
+                <img id="buddy-sprite" alt="">
+              </div>
+              <div class="info">
+                <div class="nm" id="buddy-name">--</div>
+                <div class="row1">
+                  <span class="lv" id="buddy-level">Lv.--</span>
+                  <span class="hearts" id="buddy-bond">--</span>
+                </div>
+                <div class="moodbig">此刻：<b id="buddy-mood">--</b></div>
+                <div class="kv">
+                  <span class="k">物种</span><span class="v" id="buddy-species">--</span>
+                  <span class="k">性格</span><span class="v" id="buddy-nature">--</span>
+                  <span class="k">特性</span><span class="v" id="buddy-characteristic">--</span>
+                </div>
+              </div>
+            </div>
+            <div class="ivbars" id="buddy-iv"></div>
+            <div class="sig" id="buddy-signature">--</div>
+            <div class="badges" id="buddy-badges"></div>
+            <div class="goal">
+              <div class="gl">
+                <span>下一进化</span>
+                <span id="next-evo-label">--</span>
+              </div>
+              <div class="gbar"><i id="next-evo-bar"></i></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="phd">
+            <span class="px">BOX · 收藏</span>
+            <span class="tag" id="box-count">--</span>
+          </div>
+          <div class="pbody"><div class="box" id="box"></div></div>
+        </section>
+
+        <section class="panel">
+          <div class="phd">
+            <span class="px">SECRETS · 秘密陈列馆</span>
+            <span class="tag" id="secrets-count">--</span>
+          </div>
+          <div class="pbody">
+            <div class="secs" id="secrets"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="settings-wrap">
+      <section class="panel">
+        <div class="phd">
+          <span class="px">SETTINGS · 设置</span>
+          <span class="tag">纯偏好</span>
+        </div>
+        <div class="pbody">
+          <form id="settings-form">
+            <div class="setgrid">
+              <div>
+                <div class="row"><label for="settings-name">buddy 取名</label><input id="settings-name" name="name" type="text" maxlength="16"></div>
+                <div class="row"><label for="quiet-start">免打扰起</label><input id="quiet-start" name="quietStart" type="number" min="0" max="23" step="1"></div>
+                <div class="row"><label for="quiet-end">免打扰止</label><input id="quiet-end" name="quietEnd" type="number" min="0" max="23" step="1"></div>
+                <div class="row"><label for="settings-volume">音量</label><input id="settings-volume" name="volume" type="range" min="0" max="100"><span class="v" id="volume-value">--</span></div>
+              </div>
+              <div>
+                <div class="row"><label for="settings-lat">纬度</label><input id="settings-lat" name="lat" type="number" min="-90" max="90" step="0.0001"></div>
+                <div class="row"><label for="settings-lon">经度</label><input id="settings-lon" name="lon" type="number" min="-180" max="180" step="0.0001"></div>
+                <div class="row"><label>难度</label><span class="lockchip" id="difficulty-lock">NORMAL · 锁定</span></div>
+                <div class="row"><label>服务</label><span class="lockchip" style="color:var(--grn);border-color:var(--grn-dk)">127.0.0.1 only</span></div>
+              </div>
+            </div>
+            <div class="actions">
+              <span id="settings-status" role="status"></span>
+              <button type="submit">保存偏好</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      <span>host v0.1.0 · 伴侣图鉴 App（只读为主）</span>
+      <span class="px" style="color:var(--grn)">MVP v3</span>
+    </footer>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
