@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig, saveConfig } from "./config.js";
+import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
@@ -38,6 +39,7 @@ export async function runOneTick({
   mock,
   transport,
   transportFactory = createTransport,
+  personalityRng = Math.random,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
@@ -47,7 +49,7 @@ export async function runOneTick({
   const buttonEvents = [];
   const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
   const sensor = room ?? activeTransport.feedSensor?.();
-  let pet = ensurePet(loadState(statePath), today);
+  let pet = ensurePet(loadState(statePath), today, personalityRng);
   const closedUsageDays = new Set();
   if (
     pet.lastGrowthDay &&
@@ -220,35 +222,47 @@ function adaptPngTransport(transport) {
   };
 }
 
-function ensurePet(state, today) {
-  if (state?.level) {
-    return {
-      species: "eevee",
-      exp: 0,
-      bond: 120,
-      streak: 0,
-      shield: 0,
-      lastSettled: today,
-      lastGrowthDay: null,
-      todayCreditedExp: 0,
-      todayCreditedBond: 0,
-      ...state,
-    };
-  }
+function ensurePet(state, today, personalityRng = Math.random) {
+  const pet = state?.level
+    ? {
+        species: "eevee",
+        exp: 0,
+        bond: 120,
+        streak: 0,
+        shield: 0,
+        lastSettled: today,
+        lastGrowthDay: null,
+        todayCreditedExp: 0,
+        todayCreditedBond: 0,
+        ...state,
+      }
+    : {
+        ...state,
+        species: "eevee",
+        level: 1,
+        exp: 0,
+        bond: 120,
+        streak: 0,
+        shield: 0,
+        lastSettled: today,
+        lastGrowthDay: null,
+        todayCreditedExp: 0,
+        todayCreditedBond: 0,
+      };
 
-  return {
-    ...state,
-    species: "eevee",
-    level: 1,
-    exp: 0,
-    bond: 120,
-    streak: 0,
-    shield: 0,
-    lastSettled: today,
-    lastGrowthDay: null,
-    todayCreditedExp: 0,
-    todayCreditedBond: 0,
-  };
+  return hasPersonality(pet) ? pet : { ...pet, ...rollPersonality(personalityRng) };
+}
+
+function hasPersonality(pet) {
+  return Boolean(
+    typeof pet.nature === "string" &&
+      pet.nature.length > 0 &&
+      Array.isArray(pet.iv) &&
+      pet.iv.length === 6 &&
+      pet.iv.every((value) => Number.isInteger(value) && value >= 0 && value <= 31) &&
+      typeof pet.characteristic === "string" &&
+      pet.characteristic.length > 0,
+  );
 }
 
 async function loadWeatherSnapshot(weatherClient, config) {
