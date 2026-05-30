@@ -5,9 +5,11 @@ export function settleDays(
   today,
   { usedDays, maxCatchupDays = 30, bondDecayPerMissed = 3 },
 ) {
-  if (!pet.lastSettled || pet.lastSettled >= today) return pet;
+  if (!pet.lastSettled) return pet;
 
   const days = cappedDays(daysBetween(pet.lastSettled, today), maxCatchupDays);
+  if (days.length === 0) return pet;
+
   let bond = pet.bond;
   let streak = pet.streak;
   let shield = pet.shield;
@@ -23,7 +25,7 @@ export function settleDays(
     }
   }
 
-  return { ...pet, bond, streak, shield, lastSettled: today };
+  return { ...pet, bond, streak, shield, lastSettled: days.at(-1) };
 }
 
 function cappedDays(days, maxCatchupDays) {
@@ -36,8 +38,9 @@ function daysBetween(from, to) {
   let current = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
 
-  while (current < end) {
+  while (true) {
     current = new Date(Number(current) + DAY_MS);
+    if (current >= end) break;
     days.push(toYmd(current));
   }
 

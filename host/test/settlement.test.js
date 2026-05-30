@@ -9,27 +9,35 @@ test("settles each missed day once and rerun for same today is idempotent", () =
   const b = settleDays(a, "2026-05-28", { usedDays: new Set() });
 
   assert.deepEqual(b, a);
-  assert.equal(a.lastSettled, "2026-05-28");
+  assert.equal(a.lastSettled, "2026-05-27");
   assert.equal(a.shield, 0);
   assert.equal(a.streak, 0);
-  assert.equal(a.bond, 94);
+  assert.equal(a.bond, 97);
 });
 
-test("settles missed days in order so later used days start a new streak", () => {
+test("does not settle the current day before it is complete", () => {
+  const pet = { bond: 100, lastSettled: "2026-05-29", streak: 5, shield: 0 };
+
+  const out = settleDays(pet, "2026-05-30", { usedDays: new Set() });
+
+  assert.deepEqual(out, pet);
+});
+
+test("settles only completed days in order", () => {
   const pet = { bond: 100, lastSettled: "2026-05-25", streak: 5, shield: 0 };
   const usedDays = new Set(["2026-05-26", "2026-05-28"]);
 
   const out = settleDays(pet, "2026-05-28", { usedDays });
 
   assert.equal(out.bond, 97);
-  assert.equal(out.streak, 1);
-  assert.equal(out.lastSettled, "2026-05-28");
+  assert.equal(out.streak, 0);
+  assert.equal(out.lastSettled, "2026-05-27");
 });
 
 test("shield is consumed before breaking streak or decaying bond", () => {
   const pet = { bond: 100, lastSettled: "2026-05-25", streak: 5, shield: 1 };
 
-  const out = settleDays(pet, "2026-05-26", { usedDays: new Set() });
+  const out = settleDays(pet, "2026-05-27", { usedDays: new Set() });
 
   assert.equal(out.shield, 0);
   assert.equal(out.streak, 5);
@@ -45,5 +53,5 @@ test("caps catch-up at maxCatchupDays", () => {
   });
 
   assert.equal(out.bond, 194);
-  assert.equal(out.lastSettled, "2026-01-06");
+  assert.equal(out.lastSettled, "2026-01-05");
 });

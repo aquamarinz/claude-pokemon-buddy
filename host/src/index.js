@@ -40,19 +40,20 @@ export async function runOneTick({
   const transport = mock ?? createMockTransport({ framePath });
   const sensor = room ?? transport.feedSensor();
   let pet = ensurePet(loadState(statePath), today);
+  const closedUsageDays = new Set();
+  if (
+    pet.lastGrowthDay &&
+    pet.lastGrowthDay < today &&
+    ((pet.todayCreditedExp ?? 0) > 0 || (pet.todayCreditedBond ?? 0) > 0)
+  ) {
+    closedUsageDays.add(pet.lastGrowthDay);
+  }
 
   pet = settleDays(pet, today, {
-    usedDays: new Set(usage.todayTokens > 0 ? [today] : []),
+    usedDays: closedUsageDays,
   });
 
-  if (pet.lastGrowthDay !== today) {
-    pet = {
-      ...applyDailyGrowth(pet, { todayTokens: usage.todayTokens }),
-      lastGrowthDay: today,
-    };
-  } else {
-    pet = { ...pet, expGain: 0 };
-  }
+  pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });
 
   const evolution = resolveEvolution(pet.species, {
     bond: pet.bond,
@@ -141,6 +142,9 @@ function ensurePet(state, today) {
       streak: 0,
       shield: 0,
       lastSettled: today,
+      lastGrowthDay: null,
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
       ...state,
     };
   }
@@ -155,6 +159,8 @@ function ensurePet(state, today) {
     shield: 0,
     lastSettled: today,
     lastGrowthDay: null,
+    todayCreditedExp: 0,
+    todayCreditedBond: 0,
   };
 }
 

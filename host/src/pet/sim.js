@@ -17,14 +17,15 @@ export function deriveMood({ p5h, todayCost }) {
   return "happy";
 }
 
-export function applyDailyGrowth(pet, { todayTokens }) {
-  const expGain = Math.min(
-    PARAMS.dailyExpCap,
-    Math.floor(todayTokens / 1000) * PARAMS.expPerKTok,
-  );
+export function applyDailyGrowth(pet, { todayTokens, today } = {}) {
+  const credited = dailyGrowthCredit(todayTokens);
+  const sameDay = today && pet.lastGrowthDay === today;
+  const creditedExp = sameDay ? Number(pet.todayCreditedExp ?? 0) : 0;
+  const creditedBond = sameDay ? Number(pet.todayCreditedBond ?? 0) : 0;
+  const expGain = Math.max(0, credited.exp - creditedExp);
+  const bondGain = Math.max(0, credited.bond - creditedBond);
   const totalExp = pet.exp + expGain;
   const level = pet.level + Math.floor(totalExp / PARAMS.levelExp);
-  const bondGain = todayTokens > 0 ? Math.min(PARAMS.dailyBondCap, PARAMS.bondPerActiveDay) : 0;
   const bond = Math.min(PARAMS.bondSoftCap, pet.bond + bondGain);
 
   return {
@@ -33,5 +34,19 @@ export function applyDailyGrowth(pet, { todayTokens }) {
     exp: totalExp % PARAMS.levelExp,
     bond,
     expGain,
+    todayCreditedExp: Math.max(creditedExp, credited.exp),
+    todayCreditedBond: Math.max(creditedBond, credited.bond),
+    ...(today ? { lastGrowthDay: today } : {}),
+  };
+}
+
+function dailyGrowthCredit(todayTokens) {
+  const tokens = Math.max(0, Number(todayTokens ?? 0));
+  return {
+    exp: Math.min(
+      PARAMS.dailyExpCap,
+      Math.floor(tokens / 1000) * PARAMS.expPerKTok,
+    ),
+    bond: tokens > 0 ? Math.min(PARAMS.dailyBondCap, PARAMS.bondPerActiveDay) : 0,
   };
 }
