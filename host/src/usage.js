@@ -73,15 +73,17 @@ export function normalizeUsage({ blocksJson, dailyJson, budget5h, budgetWeek }) 
     .slice(-7)
     .reduce((sum, day) => sum + numberField(day.totalTokens, "daily.totalTokens"), 0);
   const today = daily.at(-1);
+  const todayPeriod = stringField(today.period, "daily.period");
 
   return {
     modelled: true,
     p5h: percent(activeTokens, budget5h),
     pweek: percent(weekTokens, budgetWeek),
     resets5h: stringField(active.endTime, "block.endTime"),
+    resetsWeek: nextWeeklyReset(todayPeriod),
     activeTokens,
     activeCost,
-    todayPeriod: stringField(today.period, "daily.period"),
+    todayPeriod,
     todayTokens: numberField(today.totalTokens, "daily.totalTokens"),
     todayCost: numberField(today.totalCost, "daily.totalCost"),
     weekTokens,
@@ -135,6 +137,22 @@ function percent(tokens, budget) {
   return clampPct((tokens / denom) * 100);
 }
 
+function nextWeeklyReset(period) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(period);
+  if (!match) throw new Error("expected daily period YYYY-MM-DD");
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  let daysUntilMonday = (8 - date.getDay()) % 7;
+  if (daysUntilMonday === 0) daysUntilMonday = 7;
+  date.setDate(date.getDate() + daysUntilMonday);
+
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T00:00:00`;
+}
+
 function clampPct(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }

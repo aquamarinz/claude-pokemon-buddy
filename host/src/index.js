@@ -80,6 +80,7 @@ export async function runOneTick({
   const sprite = await loadBuddySprite(pet.species);
   const { pngBuffer, bitmap } = await renderFrame({
     ...usage,
+    now,
     weather,
     room: sensor,
     out: {

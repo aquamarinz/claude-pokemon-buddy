@@ -1,16 +1,20 @@
 import { createCanvas } from "@napi-rs/canvas";
 
-import { ditherTo1bpp } from "./dither.js";
+import { thresholdTo1bpp } from "./dither.js";
 import { drawGray } from "./layout.js";
 import { H, W } from "./palette.js";
 
 export async function renderFrame(model) {
   const image = drawGray(model);
   const gray = rgbaToGray(image.data, W, H);
-  const bitmap = ditherTo1bpp(gray, W, H);
+  const bitmap = grayToBitmap(gray, W, H);
   const pngBuffer = await bitmapToPng(bitmap);
 
   return { pngBuffer, bitmap };
+}
+
+export function grayToBitmap(gray, w, h) {
+  return thresholdTo1bpp(gray, w, h);
 }
 
 function rgbaToGray(data, w, h) {
