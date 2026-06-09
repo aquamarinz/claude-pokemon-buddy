@@ -38,11 +38,18 @@ claude --version   # 需 ≥ 2.1.80（rate_limits 字段从该版本起出现在
 }
 ```
 
-## 已有 statusline 共存警告
+## 已有 statusline 共存（Mac owner：claude-hud）
 
-若已配了 claude-hud 等 statusLine，此配置会**替换**它（CC 只跑一个 statusLine command）。
-如需保留原状态栏，让 `usage-bridge.mjs` 内部再 `spawn` 原命令并把它的输出拼到本脚本输出后
-（留作可选增强，默认直接替换）。
+CC 只跑一个 statusLine command，直接配 bridge 会替换掉已有的 claude-hud。用
+`host/scripts/cpb-statusline.sh` wrapper 共存——它把 CC 的 stdin **fan-out** 给
+bridge（写 `cpb-usage.json`）+ claude-hud（照常渲染状态栏）：
+
+```json
+{ "statusLine": { "type": "command", "command": "bash /ABS/PATH/host/scripts/cpb-statusline.sh" } }
+```
+
+朋友 Windows 无 claude-hud，直接配 `usage-bridge.mjs` 即可，不需 wrapper。
+（注：claude-hud 本身也读 `rate_limits`、状态栏已显示官方 5h/周%；wrapper 只是让 buddy 也读到同一份数据。）
 
 ## `rate_limits` 缺失说明
 
