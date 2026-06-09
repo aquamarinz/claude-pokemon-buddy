@@ -371,10 +371,11 @@ function dashboardUsage(usage, pet = {}) {
   };
 }
 
-function dashboardSensors(room = {}) {
+export function dashboardSensors(room) {
+  const r = room ?? {};
   return {
-    roomT: room.roomT ?? room.t ?? null,
-    roomH: room.roomH ?? room.h ?? null,
+    roomT: r.roomT ?? r.t ?? null,
+    roomH: r.roomH ?? r.h ?? null,
   };
 }
 
