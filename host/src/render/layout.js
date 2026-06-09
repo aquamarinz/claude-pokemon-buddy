@@ -11,6 +11,7 @@ GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
 const MONO = '"Zpix"';
 const CJK = '"Zpix"';
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MOOD_ZH = { shocked: "震惊", fainted: "力竭", strained: "吃力", focused: "专注", happy: "开心" };
 export const BUDDY_SPRITE_SLOT = 136;
 export const BUDDY_SPRITE_SCALE = 3;
 const TODAY_TEXT_X = 11;
@@ -95,19 +96,22 @@ function drawLeftPanel(g, model) {
   g.font = fitTodayLineFont(g, text.today);
   g.fillText(text.today, TODAY_TEXT_X, 177);
 
-  line(g, 10, 191, LEFT_W - 12, 191);
-  drawWeatherIcon(g, weatherIconKind(model.weather), 13, 201);
-  g.font = `800 12px ${CJK}`;
-  g.fillText(text.weatherMain, 48, 214);
+  line(g, 10, 189, LEFT_W - 12, 189);
+  // Weather: condition + temp enlarged to a secondary focal point.
+  g.save();
+  g.translate(11, 192);
+  g.scale(1.35, 1.35);
+  drawWeatherIcon(g, weatherIconKind(model.weather), 0, 0);
+  g.restore();
+  g.font = `800 24px ${CJK}`;
+  g.fillText(text.weatherMain, 56, 217);
   g.font = `600 12px ${CJK}`;
-  g.fillText(text.weatherFeels, 48, 231);
-  g.font = `600 12px ${CJK}`;
-  g.fillText(text.weatherDetail, 11, 248);
+  g.fillText(text.weatherDetail, 11, 244);
 
-  line(g, 10, 257, LEFT_W - 12, 257);
+  line(g, 10, 258, LEFT_W - 12, 258);
   g.font = `700 12px ${CJK}`;
-  g.fillText(`室内  ${tempHum(model.room)}`, 11, 274);
-  g.fillText(`室外  ${tempHum(model.out)}`, 11, 291);
+  g.fillText(`室内  ${tempHum(model.room)}`, 11, 275);
+  g.fillText(`室外  ${tempHum(model.out)}`, 11, 292);
 }
 
 function drawBuddyPanel(g, model) {
@@ -115,7 +119,7 @@ function drawBuddyPanel(g, model) {
   const panelW = W - LEFT_W;
   const buddy = model.buddy ?? {};
 
-  drawBubble(g, panelX + 114, 13, buddy.bubble ?? EEVEE_IDLE_CRY);
+  drawBubble(g, W - 8, 11, buddy.bubble ?? EEVEE_IDLE_CRY);
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
@@ -127,18 +131,26 @@ function drawBuddyPanel(g, model) {
 
   g.fillStyle = INK;
   g.font = `800 12px ${MONO}`;
-  g.fillRect(panelX + 49, 221, 7, 7);
-  g.fillText(buddy.mood ?? "focused", panelX + 62, 229);
+  g.fillRect(panelX + 14, 205, 7, 7);
+  g.fillText(MOOD_ZH[buddy.mood] ?? buddy.mood ?? "专注", panelX + 27, 213);
 
-  g.font = `800 12px ${MONO}`;
   const level = Math.max(1, Number(buddy.level ?? 1));
   const hearts = heartCount(buddy.bond ?? 0);
   const streak = Math.max(0, Number(model.streak ?? 0));
-  g.fillText(`Lv.${level}`, panelX + 30, 251);
-  drawHearts(g, panelX + 70, 239, hearts);
-  drawFlame(g, panelX + 132, 239);
-  g.fillText(`${streak}d`, panelX + 146, 251);
-  drawMeter(g, panelX + 33, 260, 119, 8, clampPct(buddy.expPct ?? 0), { striped: false });
+
+  // 等级 + 连续天数（24px = Zpix 整数倍，清晰）
+  g.font = `800 24px ${MONO}`;
+  g.fillText(`Lv.${level}`, panelX + 14, 245);
+  drawFlame(g, panelX + 104, 229);
+  g.fillText(`${streak}天`, panelX + 122, 245);
+
+  // 经验条
+  drawMeter(g, panelX + 14, 255, 156, 11, clampPct(buddy.expPct ?? 0), { striped: false });
+
+  // 亲密度
+  g.font = `700 12px ${CJK}`;
+  g.fillText("亲密度", panelX + 14, 288);
+  drawHearts(g, panelX + 58, 277, hearts);
 }
 
 export function fitTodayLineFont(g, text) {
@@ -226,19 +238,22 @@ function drawMeter(g, x, y, w, h, pct, { striped }) {
   }
 
   g.fillStyle = INK;
+  g.strokeStyle = INK;
+  g.lineWidth = 2;
 }
 
-function drawBubble(g, x, y, text) {
-  g.font = `700 12px ${MONO}`;
-  const w = Math.ceil(g.measureText(text).width) + 16;
+function drawBubble(g, rightX, y, text) {
+  g.font = `700 24px ${MONO}`;
+  const w = Math.ceil(g.measureText(text).width) + 22;
+  const x = rightX - w;
   g.fillStyle = PAPER;
   g.strokeStyle = INK;
   g.lineWidth = 2;
-  roundedRect(g, x, y, w, 22, 7);
+  roundedRect(g, x, y, w, 36, 9);
   g.fill();
   g.stroke();
   g.fillStyle = INK;
-  g.fillText(text, x + 8, y + 15);
+  g.fillText(text, x + 11, y + 27);
 }
 
 function drawShadow(g, cx, y) {
@@ -335,7 +350,7 @@ function drawFlame(g, x, y) {
 
 function drawHearts(g, x, y, filled) {
   for (let i = 0; i < 5; i += 1) {
-    drawHeart(g, x + i * 11, y, i < filled);
+    drawHeart(g, x + i * 20, y, i < filled);
   }
 }
 
