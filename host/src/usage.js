@@ -8,8 +8,10 @@ export async function loadUsageSnapshot({
   planTokenBudgetWeek,
 } = {}) {
   try {
-    const blocksJson = await run("npx", ["ccusage", "blocks", "--json"]);
-    const dailyJson = await run("npx", ["ccusage", "daily", "--json"]);
+    // --yes skips npx's first-run "Ok to proceed?" prompt. With stdin ignored
+    // that prompt hangs forever and wedges the whole tick loop.
+    const blocksJson = await run("npx", ["--yes", "ccusage", "blocks", "--json"]);
+    const dailyJson = await run("npx", ["--yes", "ccusage", "daily", "--json"]);
     return {
       ok: true,
       ...normalizeUsage({
@@ -91,11 +93,18 @@ export function normalizeUsage({ blocksJson, dailyJson, budget5h, budgetWeek }) 
   };
 }
 
-function runCcusage(command, args) {
+function runCcusage(command, args, { timeoutMs = 60_000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+
+    // Hard ceiling so a hung child (network stall, npx download wedge) can never
+    // block the tick loop forever — fail-closed to degraded usage instead.
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`ccusage timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -105,8 +114,12 @@ function runCcusage(command, args) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code === 0) {
         resolve(stdout);
       } else {
