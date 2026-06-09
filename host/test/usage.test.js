@@ -14,44 +14,20 @@ const dailyJson = readFileSync(
 const blocksFixture = JSON.parse(blocksJson);
 const dailyFixture = JSON.parse(dailyJson);
 
-test("normalizeUsage computes 5H%, WEEK%, and daily totals from real ccusage fixtures", () => {
-  const active = blocksFixture.blocks.find((block) => block.isActive);
+test("normalizeUsage outputs cost/token and leaves percent null (rate-limits owns %)", () => {
   const lastDaily = dailyFixture.daily.at(-1);
   const weekTokens = dailyFixture.daily
     .slice(-7)
     .reduce((sum, day) => sum + day.totalTokens, 0);
+  const u = normalizeUsage({ blocksJson, dailyJson });
 
-  const u = normalizeUsage({
-    blocksJson,
-    dailyJson,
-    budget5h: active.totalTokens * 2,
-    budgetWeek: weekTokens * 2,
-  });
-
-  assert.equal(u.modelled, true);
-  assert.equal(u.p5h, 50);
-  assert.equal(u.pweek, 50);
-  assert.equal(u.activeTokens, active.totalTokens);
-  assert.equal(u.activeCost, active.costUSD);
-  assert.equal(u.resets5h, active.endTime);
-  assert.equal(u.resetsWeek, "2026-06-01T00:00:00");
-  assert.equal(u.todayPeriod, lastDaily.period);
+  assert.equal(u.p5h, null);
+  assert.equal(u.pweek, null);
+  assert.equal(u.resets5h, null);
+  assert.equal(u.resetsWeek, null);
   assert.equal(u.todayTokens, lastDaily.totalTokens);
   assert.equal(u.todayCost, lastDaily.totalCost);
   assert.equal(u.weekTokens, weekTokens);
-  assert.deepEqual(u.perType, {});
-});
-
-test("normalizeUsage clamps percentages to 0..100", () => {
-  const u = normalizeUsage({
-    blocksJson,
-    dailyJson,
-    budget5h: 1,
-    budgetWeek: 1,
-  });
-
-  assert.equal(u.p5h, 100);
-  assert.equal(u.pweek, 100);
 });
 
 test("normalizeUsage fail-closed on bad JSON or schema drift", () => {
