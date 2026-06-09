@@ -212,8 +212,9 @@
     }
 
     .screenwrap {
-      width: min(100%, 463px);
-      aspect-ratio: 4 / 3;
+      /* Keep dashboard preview at 1:1 so pixelated columns stay even; hardware is native 400x300. */
+      width: 434px;
+      height: 334px;
       display: grid;
       place-items: center;
       padding: 10px;
@@ -224,9 +225,9 @@
     }
 
     #live {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
+      width: 400px;
+      height: 300px;
+      object-fit: fill;
       image-rendering: pixelated;
       background: var(--paper);
     }

@@ -1,11 +1,21 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { fileURLToPath } from "node:url";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
+import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
-import { ditherSpriteGray } from "./sprites.js";
+import { ditherSpriteGray, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
-const MONO = '"Courier New", ui-monospace, monospace';
-const CJK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+export const ZPIX_FONT_PATH = fileURLToPath(new URL("../../seed/fonts/zpix.ttf", import.meta.url));
+GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
+
+const MONO = '"Zpix"';
+const CJK = '"Zpix"';
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const BUDDY_SPRITE_SLOT = 136;
+export const BUDDY_SPRITE_SCALE = 3;
+const TODAY_TEXT_X = 11;
+const TODAY_TEXT_MAX_X = LEFT_W - 12;
+const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -39,7 +49,7 @@ export function layoutText(model = {}) {
     today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
     weatherMain: `${weatherLabel} ${value(weather.temp)}°`,
     weatherFeels: `体感${value(weather.feels)}°`,
-    weatherDetail: `最高${value(weather.hi)}° 最低${value(weather.lo)}° · 降水${value(weather.precip)}% · 风${value(weather.wind)}`,
+    weatherDetail: `高${value(weather.hi)}°低${value(weather.lo)}° 降${value(weather.precip)}% 风${value(weather.wind)}`,
   };
 }
 
@@ -48,7 +58,7 @@ function drawLeftPanel(g, model) {
   g.fillStyle = INK;
   g.fillRect(LEFT_W - 2, 0, 2, H);
 
-  g.font = `800 16px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("CLAUDE", 10, 23);
   g.font = `700 12px ${MONO}`;
   g.textAlign = "right";
@@ -58,40 +68,40 @@ function drawLeftPanel(g, model) {
 
   const p5h = clampPct(model.p5h);
   const p5hText = text.p5h;
-  g.font = `800 64px ${MONO}`;
+  g.font = `800 48px ${MONO}`;
   g.fillText(p5hText, 9, 88);
   if (p5hText !== "--") {
     const pctX = Math.round(9 + g.measureText(p5hText).width - 2);
-    g.font = `800 23px ${MONO}`;
+    g.font = `800 24px ${MONO}`;
     g.fillText("%", pctX, 87);
   }
-  g.font = `800 11px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("5H", 151, 58);
   g.fillText("WINDOW", 151, 72);
 
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   g.fillText(text.resets5h, 11, 110);
 
-  g.font = `800 11px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.fillText("WEEK", 11, 135);
   drawMeter(g, 56, 124, 100, 14, clampPct(model.pweek), { striped: true });
-  g.font = `800 14px ${MONO}`;
+  g.font = `800 12px ${MONO}`;
   g.textAlign = "right";
   g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 136);
   g.textAlign = "left";
 
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   g.fillText(text.resetsWeek, 11, 155);
-  g.font = `700 13px ${MONO}`;
-  g.fillText(text.today, 11, 177);
+  g.font = fitTodayLineFont(g, text.today);
+  g.fillText(text.today, TODAY_TEXT_X, 177);
 
   line(g, 10, 191, LEFT_W - 12, 191);
   drawWeatherIcon(g, weatherIconKind(model.weather), 13, 201);
-  g.font = `800 13px ${CJK}`;
+  g.font = `800 12px ${CJK}`;
   g.fillText(text.weatherMain, 48, 214);
-  g.font = `600 11px ${CJK}`;
+  g.font = `600 12px ${CJK}`;
   g.fillText(text.weatherFeels, 48, 231);
-  g.font = `600 10px ${CJK}`;
+  g.font = `600 12px ${CJK}`;
   g.fillText(text.weatherDetail, 11, 248);
 
   line(g, 10, 257, LEFT_W - 12, 257);
@@ -105,12 +115,14 @@ function drawBuddyPanel(g, model) {
   const panelW = W - LEFT_W;
   const buddy = model.buddy ?? {};
 
-  drawBubble(g, panelX + 114, 13, buddy.bubble ?? "Pika!");
+  drawBubble(g, panelX + 114, 13, buddy.bubble ?? EEVEE_IDLE_CRY);
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
-    x: panelX + Math.floor((panelW - 136) / 2),
+    x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
     y: 60,
-    size: 136,
+    maxSize: BUDDY_SPRITE_SLOT,
+    srcW: buddy.spriteW,
+    srcH: buddy.spriteH,
   });
 
   g.fillStyle = INK;
@@ -129,18 +141,37 @@ function drawBuddyPanel(g, model) {
   drawMeter(g, panelX + 33, 260, 119, 8, clampPct(buddy.expPct ?? 0), { striped: false });
 }
 
-function drawSprite(g, spriteGray, { x, y, size }) {
+export function fitTodayLineFont(g, text) {
+  return fitFont(g, text, {
+    ...TODAY_FONT,
+    maxWidth: TODAY_TEXT_MAX_X - TODAY_TEXT_X,
+  });
+}
+
+export function drawSprite(g, spriteGray, {
+  x,
+  y,
+  maxSize = BUDDY_SPRITE_SLOT,
+  size,
+  srcW,
+  srcH,
+  scale = BUDDY_SPRITE_SCALE,
+  mode = "threshold",
+  threshold = SPRITE_CRISP_THRESHOLD,
+} = {}) {
   const pixels = spriteGray instanceof Uint8Array ? spriteGray : placeholderSprite(96, 96);
   const side = Math.max(1, Math.round(Math.sqrt(pixels.length)));
-  const srcW = side * side === pixels.length ? side : 96;
-  const srcH = Math.max(1, Math.floor(pixels.length / srcW));
-  const dithered = ditherSpriteGray(pixels, srcW, srcH);
-  const spriteCanvas = createCanvas(srcW, srcH);
+  const sourceW = Number.isInteger(srcW) && srcW > 0 ? srcW : (side * side === pixels.length ? side : 96);
+  const sourceH = Number.isInteger(srcH) && srcH > 0 ? srcH : Math.max(1, Math.floor(pixels.length / sourceW));
+  const rendered = mode === "dither"
+    ? ditherSpriteGray(pixels, sourceW, sourceH)
+    : thresholdSpriteGray(pixels, sourceW, sourceH, { threshold });
+  const spriteCanvas = createCanvas(sourceW, sourceH);
   const sg = spriteCanvas.getContext("2d");
-  const img = sg.createImageData(srcW, srcH);
+  const img = sg.createImageData(sourceW, sourceH);
 
-  for (let i = 0; i < srcW * srcH; i += 1) {
-    const v = dithered[i] ?? 255;
+  for (let i = 0; i < sourceW * sourceH; i += 1) {
+    const v = rendered[i] ?? 255;
     img.data[i * 4] = v;
     img.data[i * 4 + 1] = v;
     img.data[i * 4 + 2] = v;
@@ -148,8 +179,19 @@ function drawSprite(g, spriteGray, { x, y, size }) {
   }
 
   sg.putImageData(img, 0, 0);
+  const slot = Math.max(1, Math.floor(maxSize ?? size ?? Math.max(sourceW, sourceH)));
+  const integerScale = Math.max(1, Math.floor(scale));
+  const fitScale = Math.max(1, Math.min(integerScale, Math.floor(slot / Math.max(sourceW, sourceH)) || 1));
+  const targetW = sourceW * fitScale;
+  const targetH = sourceH * fitScale;
   g.imageSmoothingEnabled = false;
-  g.drawImage(spriteCanvas, x, y, size, size);
+  g.drawImage(
+    spriteCanvas,
+    x + Math.floor((slot - targetW) / 2),
+    y + Math.floor((slot - targetH) / 2),
+    targetW,
+    targetH,
+  );
 }
 
 function placeholderSprite(w, h) {
@@ -187,16 +229,16 @@ function drawMeter(g, x, y, w, h, pct, { striped }) {
 }
 
 function drawBubble(g, x, y, text) {
-  g.font = `700 11px ${MONO}`;
+  g.font = `700 12px ${MONO}`;
   const w = Math.ceil(g.measureText(text).width) + 16;
   g.fillStyle = PAPER;
   g.strokeStyle = INK;
   g.lineWidth = 2;
-  roundedRect(g, x, y, w, 21, 7);
+  roundedRect(g, x, y, w, 22, 7);
   g.fill();
   g.stroke();
   g.fillStyle = INK;
-  g.fillText(text, x + 8, y + 14);
+  g.fillText(text, x + 8, y + 15);
 }
 
 function drawShadow(g, cx, y) {
@@ -354,6 +396,8 @@ function tokens(v) {
   if (v == null) return "--";
   const n = Number(v);
   if (!Number.isFinite(n)) return "--";
+  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(Math.round(n));
@@ -362,7 +406,21 @@ function tokens(v) {
 function money(v) {
   if (v == null) return "--";
   const n = Number(v);
-  return Number.isFinite(n) ? n.toFixed(2) : "--";
+  if (!Number.isFinite(n)) return "--";
+  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toFixed(2);
+}
+
+function fitFont(g, text, { weight, size, minSize, family, maxWidth }) {
+  for (let px = size; px >= minSize; px -= 1) {
+    const font = `${weight} ${px}px ${family}`;
+    g.font = font;
+    if (g.measureText(text).width <= maxWidth) return font;
+  }
+  return `${weight} ${minSize}px ${family}`;
 }
 
 function value(v) {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { EEVEE_IDLE_CRY } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
@@ -91,11 +92,13 @@ export async function runOneTick({
     },
     buddy: {
       spriteGray: sprite.gray,
+      spriteW: sprite.w,
+      spriteH: sprite.h,
       mood,
       level: pet.level,
       bond: bondHearts(pet.bond),
       expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
-      bubble: sprite.placeholder ? "BUDDY" : "Pika!",
+      bubble: sprite.placeholder ? "BUDDY" : EEVEE_IDLE_CRY,
     },
   });
 
