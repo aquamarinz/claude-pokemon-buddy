@@ -13,6 +13,7 @@ import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
 import { createTransport } from "./transport/index.js";
 import { SOUND } from "./transport/proto.js";
+import { loadRateLimits } from "./rate-limits.js";
 import { loadUsageSnapshot, usageForDisplay } from "./usage.js";
 import { startWebServer } from "./web/server.js";
 import { validateSettings } from "./web/settings.js";
@@ -29,6 +30,20 @@ const DEFAULT_WEATHER = {
   wind: 11,
   humidity: 64,
 };
+
+// Overlay official statusline rate-limits (5h/week %/reset) onto the ccusage
+// snapshot, which now only sources cost/token totals.
+export function mergeUsage(ccusageUsage, rateLimits) {
+  return {
+    ...ccusageUsage,
+    p5h: rateLimits.p5h,
+    pweek: rateLimits.pweek,
+    resets5h: rateLimits.resets5h,
+    resetsWeek: rateLimits.resetsWeek,
+    official: rateLimits.official,
+    rateStale: rateLimits.stale,
+  };
+}
 
 export async function runOneTick({
   usage,
@@ -157,7 +172,7 @@ export async function main({
     const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
     const selected = usageForDisplay(snapshot, lastKnownUsage);
     lastKnownUsage = selected.lastKnown;
-    const usage = selected.usage;
+    const usage = mergeUsage(selected.usage, loadRateLimits());
     const weather = await loadWeatherSnapshot(weatherClient, config);
     const room = transport.feedSensor();
     const pet = await runOneTick({ usage, weather, room, statePath, framePath, transport });
@@ -356,10 +371,11 @@ function dashboardUsage(usage, pet = {}) {
   };
 }
 
-function dashboardSensors(room = {}) {
+export function dashboardSensors(room) {
+  const r = room ?? {};
   return {
-    roomT: room.roomT ?? room.t ?? null,
-    roomH: room.roomH ?? room.h ?? null,
+    roomT: r.roomT ?? r.t ?? null,
+    roomH: r.roomH ?? r.h ?? null,
   };
 }
 
