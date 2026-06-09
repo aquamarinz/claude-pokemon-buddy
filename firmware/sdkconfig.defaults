@@ -10,3 +10,9 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
+
+# Free the USB-Serial-JTAG port for the binary host link: route console logs
+# to UART0 and disable the secondary USB-Serial-JTAG console (else it fights
+# the usb_serial_jtag driver for the same peripheral).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
