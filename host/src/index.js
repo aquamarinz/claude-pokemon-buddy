@@ -12,6 +12,7 @@ import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
 import { createTransport } from "./transport/index.js";
+import { SOUND } from "./transport/proto.js";
 import { loadUsageSnapshot, usageForDisplay } from "./usage.js";
 import { startWebServer } from "./web/server.js";
 import { validateSettings } from "./web/settings.js";
@@ -74,6 +75,7 @@ export async function runOneTick({
     const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
     if (evolution.auto) {
       pet = evolvePet(pet, evolution.auto);
+      activeTransport.playSound?.(SOUND.EVOLVE);   // celebrate the evolution
     } else if (evolution.candidates.length > 0) {
       pet = { ...pet, pendingCandidates: evolution.candidates };
     }
@@ -150,6 +152,7 @@ export async function main({
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  let lastHour = new Date().getHours();
   async function tick() {
     const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
     const selected = usageForDisplay(snapshot, lastKnownUsage);
@@ -159,6 +162,11 @@ export async function main({
     const room = transport.feedSensor();
     const pet = await runOneTick({ usage, weather, room, statePath, framePath, transport });
     runtime = { usage, weather, room, pet };
+    const hour = new Date().getHours();
+    if (hour !== lastHour) {
+      lastHour = hour;
+      transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+    }
     console.log(`wrote ${framePath}`);
   }
 

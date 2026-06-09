@@ -11,6 +11,10 @@ export const T = {
   NACK: 0x85,
 };
 
+// Sound ids carried in a PLAY frame's payload[0]. Must match the firmware's
+// SND_* constants (main.cpp): 0=idle cry, 1=evolution fanfare, 2=hour chime.
+export const SOUND = { BUI: 0, EVOLVE: 1, HOUR: 2 };
+
 export function rleEncode(b) {
   const o = [];
   for (let i = 0; i < b.length;) {

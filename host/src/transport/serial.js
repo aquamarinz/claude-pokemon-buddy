@@ -172,6 +172,11 @@ export function makeTransport({
 
   return {
     pushFrame,
+    playSound(soundId) {
+      // Fire-and-forget: the device plays the sound and does not ACK a PLAY
+      // frame, so this bypasses the stop-and-wait pump used for FRAMEs.
+      port.write(encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+    },
     onButton(callback) {
       events.on("button", callback);
       return () => events.off("button", callback);
