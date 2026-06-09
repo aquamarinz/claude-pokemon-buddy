@@ -1,7 +1,10 @@
-// Claude Pokemon Buddy firmware - Milestone B4
+// Claude Pokemon Buddy firmware - Milestone B5
 //
-// Builds on B3 by adding ES8311 audio: a synthesized chiptune "Bui!" chirp the
-// buddy plays through the speaker on a KEY single-click. The codec's I2C control
+// Builds on B4's ES8311 audio with host-driven sounds: the host sends a PLAY
+// frame (type 0x03, payload[0] = sound id) so it can chime the buddy on its own
+// events — an evolution fanfare and a top-of-hour chime — while a KEY press
+// still plays the local "Bui!" idle cry. Three chiptune voices are synthesized
+// on boot; PLAY just selects which one. The codec's I2C control
 // bus is shared with the SHTC3 (same SDA13/SCL14) via codec_board (see
 // codec_init.c _i2c_init reuse). Everything below is unchanged from B3:
 //
@@ -67,6 +70,7 @@ static constexpr uint8_t KIND_DOUBLE = 3;
 // ---- Protocol --------------------------------------------------------------
 static constexpr uint8_t MAGIC    = 0xA5;
 static constexpr uint8_t T_FRAME  = 0x01;
+static constexpr uint8_t T_PLAY   = 0x03;   // host -> device: play sound, payload[0]=id
 static constexpr uint8_t T_BUTTON = 0x82;
 static constexpr uint8_t T_SENSOR = 0x83;
 static constexpr uint8_t T_ACK    = 0x84;
@@ -85,10 +89,16 @@ static QueueHandle_t     btn_queue = nullptr;     // button events -> button_tas
 // ---- Audio (ES8311; built in app_main like the I2C sensor) -----------------
 static constexpr int AUDIO_SR = 16000;            // sample rate (Hz)
 static constexpr int AUDIO_CH = 2;                // stereo frames (L=R into mono spk)
+// Sound ids — also the PLAY frame payload[0] the host sends.
+static constexpr uint8_t SND_BUI    = 0;          // idle cry (KEY press)
+static constexpr uint8_t SND_EVOLVE = 1;          // evolution fanfare (host PLAY)
+static constexpr uint8_t SND_HOUR   = 2;          // top-of-hour chime (host PLAY)
+static constexpr int     SND_COUNT  = 3;
 static CodecPort    *g_codec = nullptr;
-static int16_t      *g_bui = nullptr;             // synthesized "Bui!" chirp (PSRAM)
-static size_t        g_bui_bytes = 0;
-static QueueHandle_t audio_queue = nullptr;       // play requests -> audio_task
+static int16_t      *g_snd[SND_COUNT] = {};       // synthesized PCM per sound (PSRAM)
+static size_t        g_snd_bytes[SND_COUNT] = {};
+static QueueHandle_t audio_queue = nullptr;       // sound id -> audio_task
+static void play_sound(uint8_t id);               // fwd decl (used by parse_frames)
 
 static uint32_t crc32(const uint8_t *b, size_t n)
 {
@@ -172,8 +182,11 @@ static void parse_frames(void)
         uint32_t got = f[5 + len] | (f[5 + len + 1] << 8) |
                        (f[5 + len + 2] << 16) | ((uint32_t)f[5 + len + 3] << 24);
         if (crc32(f, 5 + len) == got) {
-            if (f[1] == T_FRAME && handle_frame_payload(f + 5, len))
-                send_ack(f[2]);                    // ACK only on success
+            if (f[1] == T_FRAME) {
+                if (handle_frame_payload(f + 5, len)) send_ack(f[2]);   // ACK on success
+            } else if (f[1] == T_PLAY && len >= 1) {
+                play_sound(f[5]);                  // payload[0] = sound id; fire-and-forget (no ACK)
+            }
             pos += frameLen;
         } else {
             pos++;                                 // bad CRC -> resync
@@ -230,53 +243,69 @@ static void button_task(void *arg)
     }
 }
 
-// Synthesize a chiptune "Bui!" chirp: two rising square-wave syllables with a
-// quick decay envelope, as 16-bit stereo (L=R) PCM in PSRAM. Generated once;
-// the speaker re-plays the same buffer on each KEY press.
-static void synth_bui(void)
+// One note: sweep f0 -> f1 over `ms`. f0 == 0 means a silent gap.
+struct Note { float f0, f1; int ms; };
+
+// Render a square-wave note sequence into a fresh 16-bit stereo (L=R) PSRAM
+// buffer. Each note gets a 5ms attack + linear decay so the chiptune voice has
+// shape without clicks. (Same synthesis as B4's chirp, now reused for 3 sounds.)
+static void synth_tone(const Note *notes, int count, int16_t **out, size_t *bytes)
 {
-    struct Syl { float f0, f1; int ms; };
-    const Syl syls[] = { {520.f, 780.f, 110}, {0.f, 0.f, 40}, {760.f, 1150.f, 130} };
     int frames = 0;
-    for (auto &s : syls) frames += AUDIO_SR * s.ms / 1000;
-    g_bui_bytes = (size_t)frames * AUDIO_CH * sizeof(int16_t);
-    g_bui = (int16_t *) heap_caps_malloc(g_bui_bytes, MALLOC_CAP_SPIRAM);
-    assert(g_bui);
+    for (int j = 0; j < count; j++) frames += AUDIO_SR * notes[j].ms / 1000;
+    *bytes = (size_t)frames * AUDIO_CH * sizeof(int16_t);
+    *out = (int16_t *) heap_caps_malloc(*bytes, MALLOC_CAP_SPIRAM);
+    assert(*out);
 
     int idx = 0;
     const int attack = AUDIO_SR * 5 / 1000;        // 5ms attack avoids a click
-    for (auto &s : syls) {
-        int n = AUDIO_SR * s.ms / 1000;
+    for (int j = 0; j < count; j++) {
+        const Note &nt = notes[j];
+        int n = AUDIO_SR * nt.ms / 1000;
         float phase = 0.0f;
         for (int i = 0; i < n; i++) {
             int16_t v = 0;
-            if (s.f0 > 0.0f) {                     // f0==0 => silent gap
+            if (nt.f0 > 0.0f) {                    // f0==0 => silent gap
                 float frac = (float)i / n;
-                float freq = s.f0 + (s.f1 - s.f0) * frac;     // linear sweep up
+                float freq = nt.f0 + (nt.f1 - nt.f0) * frac;  // linear sweep
                 phase += freq / AUDIO_SR;
                 if (phase >= 1.0f) phase -= 1.0f;
                 float sq = (phase < 0.5f) ? 1.0f : -1.0f;     // square wave (chiptune)
                 float env = (i < attack) ? (float)i / attack : (1.0f - 0.7f * frac);
                 v = (int16_t)(sq * env * 8000.0f);
             }
-            g_bui[idx++] = v;                      // L
-            g_bui[idx++] = v;                      // R
+            (*out)[idx++] = v;                     // L
+            (*out)[idx++] = v;                     // R
         }
     }
 }
 
-static void play_bui(void)
+// Synthesize all three voices once at boot. Bui = two rising syllables (idle
+// cry). Evolve = a rising C-major arpeggio landing on a held high C (fanfare).
+// Hour = two short A5 beeps (a discreet chime).
+static void synth_all(void)
 {
-    uint8_t sig = 1;
-    if (audio_queue) xQueueSend(audio_queue, &sig, 0);   // non-blocking; drop if busy
+    static const Note BUI[]    = { {520.f, 780.f, 110}, {0.f, 0.f, 40}, {760.f, 1150.f, 130} };
+    static const Note EVOLVE[] = { {523.f, 523.f, 90}, {659.f, 659.f, 90},
+                                   {784.f, 784.f, 90}, {1047.f, 1047.f, 240} };
+    static const Note HOUR[]   = { {880.f, 880.f, 90}, {0.f, 0.f, 70}, {880.f, 880.f, 90} };
+    synth_tone(BUI,    3, &g_snd[SND_BUI],    &g_snd_bytes[SND_BUI]);
+    synth_tone(EVOLVE, 4, &g_snd[SND_EVOLVE], &g_snd_bytes[SND_EVOLVE]);
+    synth_tone(HOUR,   3, &g_snd[SND_HOUR],   &g_snd_bytes[SND_HOUR]);
+}
+
+static void play_sound(uint8_t id)
+{
+    if (audio_queue && id < SND_COUNT) xQueueSend(audio_queue, &id, 0);  // drop if busy
 }
 
 static void audio_task(void *arg)
 {
-    uint8_t sig;
+    uint8_t id;
     for (;;) {
-        if (xQueueReceive(audio_queue, &sig, portMAX_DELAY) == pdTRUE && g_codec && g_bui)
-            g_codec->write(g_bui, g_bui_bytes);    // blocks until pushed to I2S
+        if (xQueueReceive(audio_queue, &id, portMAX_DELAY) == pdTRUE &&
+            g_codec && id < SND_COUNT && g_snd[id])
+            g_codec->write(g_snd[id], g_snd_bytes[id]);   // blocks until pushed to I2S
     }
 }
 
@@ -296,7 +325,7 @@ static void btn_emit(uint8_t key_id, uint8_t kind_id)
     xQueueSend(btn_queue, &ev, 0);                 // drop if full; events are advisory
 }
 
-static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY,  KIND_SHORT); play_bui(); }
+static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY,  KIND_SHORT); play_sound(SND_BUI); }
 static void on_key_double(Button *)  { btn_emit(KEY_ID_KEY,  KIND_DOUBLE); }
 static void on_key_long(Button *)    { btn_emit(KEY_ID_KEY,  KIND_LONG);   }
 static void on_boot_single(Button *) { btn_emit(KEY_ID_BOOT, KIND_SHORT);  }
@@ -379,7 +408,7 @@ extern "C" void app_main(void)
     g_codec = new CodecPort("S3_RLCD_4_2");
     g_codec->open(AUDIO_SR, AUDIO_CH, 16);
     g_codec->set_volume(80);
-    synth_bui();
+    synth_all();
     xTaskCreate(audio_task, "audio", 4096, nullptr, 4, nullptr);
-    ESP_LOGI(TAG, "B4: codec up; bui %u bytes; press KEY to chirp", (unsigned)g_bui_bytes);
+    ESP_LOGI(TAG, "B5: codec up; 3 sounds (KEY=bui, host PLAY=evolve/hour)");
 }
