@@ -1,8 +1,12 @@
-// Claude Pokemon Buddy firmware - Milestone B3
+// Claude Pokemon Buddy firmware - Milestone B4
 //
-// Builds on B2 (host -> device 1bpp frame rx + blit + ack) by adding the
-// device -> host uplink: periodic SHTC3 room temp/humidity (SENSOR frames) and
-// KEY/BOOT button events (BUTTON frames). Wire format matches the host exactly
+// Builds on B3 by adding ES8311 audio: a synthesized chiptune "Bui!" chirp the
+// buddy plays through the speaker on a KEY single-click. The codec's I2C control
+// bus is shared with the SHTC3 (same SDA13/SCL14) via codec_board (see
+// codec_init.c _i2c_init reuse). Everything below is unchanged from B3:
+//
+// B3 added the device -> host uplink: periodic SHTC3 room temp/humidity (SENSOR
+// frames) and KEY/BOOT button events (BUTTON frames). Wire format matches host
 // (host/src/transport/proto.js + serial.js):
 //
 //   frame = [0xA5][type][seq][len_lo][len_hi][payload...][crc32 LE]
@@ -33,8 +37,9 @@
 #include "display_bsp.h"
 #include "shtc3.h"
 #include "multi_button.h"
+#include "codec_bsp.h"
 
-static const char *TAG = "buddy-b3";
+static const char *TAG = "buddy-b4";
 
 // ---- Panel + sensor (constructed during C++ static init, on the main task) -
 static constexpr int W = 400;
@@ -76,6 +81,14 @@ static uint8_t *rectbuf = nullptr;                // RLE-decoded rect (PSRAM)
 
 static SemaphoreHandle_t tx_mutex = nullptr;      // serializes USJ writes
 static QueueHandle_t     btn_queue = nullptr;     // button events -> button_task
+
+// ---- Audio (ES8311; built in app_main like the I2C sensor) -----------------
+static constexpr int AUDIO_SR = 16000;            // sample rate (Hz)
+static constexpr int AUDIO_CH = 2;                // stereo frames (L=R into mono spk)
+static CodecPort    *g_codec = nullptr;
+static int16_t      *g_bui = nullptr;             // synthesized "Bui!" chirp (PSRAM)
+static size_t        g_bui_bytes = 0;
+static QueueHandle_t audio_queue = nullptr;       // play requests -> audio_task
 
 static uint32_t crc32(const uint8_t *b, size_t n)
 {
@@ -217,6 +230,56 @@ static void button_task(void *arg)
     }
 }
 
+// Synthesize a chiptune "Bui!" chirp: two rising square-wave syllables with a
+// quick decay envelope, as 16-bit stereo (L=R) PCM in PSRAM. Generated once;
+// the speaker re-plays the same buffer on each KEY press.
+static void synth_bui(void)
+{
+    struct Syl { float f0, f1; int ms; };
+    const Syl syls[] = { {520.f, 780.f, 110}, {0.f, 0.f, 40}, {760.f, 1150.f, 130} };
+    int frames = 0;
+    for (auto &s : syls) frames += AUDIO_SR * s.ms / 1000;
+    g_bui_bytes = (size_t)frames * AUDIO_CH * sizeof(int16_t);
+    g_bui = (int16_t *) heap_caps_malloc(g_bui_bytes, MALLOC_CAP_SPIRAM);
+    assert(g_bui);
+
+    int idx = 0;
+    const int attack = AUDIO_SR * 5 / 1000;        // 5ms attack avoids a click
+    for (auto &s : syls) {
+        int n = AUDIO_SR * s.ms / 1000;
+        float phase = 0.0f;
+        for (int i = 0; i < n; i++) {
+            int16_t v = 0;
+            if (s.f0 > 0.0f) {                     // f0==0 => silent gap
+                float frac = (float)i / n;
+                float freq = s.f0 + (s.f1 - s.f0) * frac;     // linear sweep up
+                phase += freq / AUDIO_SR;
+                if (phase >= 1.0f) phase -= 1.0f;
+                float sq = (phase < 0.5f) ? 1.0f : -1.0f;     // square wave (chiptune)
+                float env = (i < attack) ? (float)i / attack : (1.0f - 0.7f * frac);
+                v = (int16_t)(sq * env * 8000.0f);
+            }
+            g_bui[idx++] = v;                      // L
+            g_bui[idx++] = v;                      // R
+        }
+    }
+}
+
+static void play_bui(void)
+{
+    uint8_t sig = 1;
+    if (audio_queue) xQueueSend(audio_queue, &sig, 0);   // non-blocking; drop if busy
+}
+
+static void audio_task(void *arg)
+{
+    uint8_t sig;
+    for (;;) {
+        if (xQueueReceive(audio_queue, &sig, portMAX_DELAY) == pdTRUE && g_codec && g_bui)
+            g_codec->write(g_bui, g_bui_bytes);    // blocks until pushed to I2S
+    }
+}
+
 // ---- multi_button glue (runs on the esp_timer task; only enqueues) ---------
 static Button KeyBtn;
 static Button BootBtn;
@@ -233,7 +296,7 @@ static void btn_emit(uint8_t key_id, uint8_t kind_id)
     xQueueSend(btn_queue, &ev, 0);                 // drop if full; events are advisory
 }
 
-static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY,  KIND_SHORT);  }
+static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY,  KIND_SHORT); play_bui(); }
 static void on_key_double(Button *)  { btn_emit(KEY_ID_KEY,  KIND_DOUBLE); }
 static void on_key_long(Button *)    { btn_emit(KEY_ID_KEY,  KIND_LONG);   }
 static void on_boot_single(Button *) { btn_emit(KEY_ID_BOOT, KIND_SHORT);  }
@@ -307,4 +370,16 @@ extern "C" void app_main(void)
     g_sensor = new Shtc3(*g_bus);
     xTaskCreate(sensor_task, "sensor", 3072, nullptr, 4, nullptr);
     ESP_LOGI(TAG, "B3: sensor up");
+
+    // Audio last: codec_board's init_codec reuses g_bus's I2C bus for the ES8311
+    // control port (codec_init.c _i2c_init), so g_bus must exist first. KEY
+    // single-click then plays the synthesized "Bui!" chirp through the speaker.
+    audio_queue = xQueueCreate(4, sizeof(uint8_t));
+    assert(audio_queue);
+    g_codec = new CodecPort("S3_RLCD_4_2");
+    g_codec->open(AUDIO_SR, AUDIO_CH, 16);
+    g_codec->set_volume(80);
+    synth_bui();
+    xTaskCreate(audio_task, "audio", 4096, nullptr, 4, nullptr);
+    ESP_LOGI(TAG, "B4: codec up; bui %u bytes; press KEY to chirp", (unsigned)g_bui_bytes);
 }
