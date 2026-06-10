@@ -297,7 +297,8 @@ function makeOnboardingIo(transport) {
 
 export function ensurePet(state, today, personalityRng = Math.random) {
   // No hatched flag = fresh start (or pre-hatched dirty save) → newborn from bond 0.
-  // (2b inserts the egg/choose/hatch flow before this; for now it's a plain eevee newborn.)
+  // The onboarding gate (runOnboardingGate in main) handles species choice + hatch;
+  // ensurePet is the no-gate fallback (tests / CPB_ONCE) and births a plain eevee.
   if (!state?.hatched) {
     return {
       species: "eevee",
@@ -398,7 +399,7 @@ function dashboardPet(pet, usage) {
     species: "eevee",
     level: 1,
     exp: 0,
-    bond: 120,
+    bond: 0,
     streak: 0,
     ...pet,
   };
