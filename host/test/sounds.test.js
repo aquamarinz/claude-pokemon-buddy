@@ -34,6 +34,7 @@ function seedState(path, extra) {
   rmSync(`${path}.bak`, { force: true });
   writeFileSync(path, JSON.stringify({
     schemaVersion: 1,
+    hatched: true,
     species: "eevee", level: 5, exp: 0, bond: 50, streak: 0, ...PERSONALITY, ...extra,
   }));
 }
