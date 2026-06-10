@@ -47,6 +47,19 @@ test("loadBuddySprite loads the real Eevee asset", async () => {
   assert.equal(sprite.gray.length, 40 * 40);
 });
 
+const ALL_SPECIES = [
+  "eevee", "vaporeon", "jolteon", "flareon", "espeon", "umbreon",
+  "leafeon", "glaceon", "sylveon", "bulbasaur", "ivysaur", "venusaur",
+  "charmander", "charmeleon", "charizard", "squirtle", "wartortle", "blastoise",
+];
+
+for (const species of ALL_SPECIES) {
+  test(`loadBuddySprite loads real ${species} asset (not placeholder)`, async () => {
+    const sprite = await loadBuddySprite(species);
+    assert.equal(sprite.placeholder, false);
+  });
+}
+
 test("ditherSpriteGray keeps sprite midtones as a 1-bit Bayer pattern", () => {
   const sprite = ditherSpriteGray(new Uint8Array(8 * 8).fill(128), 8, 8);
 

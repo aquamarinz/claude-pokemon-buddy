@@ -4,7 +4,6 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 import { ditherTo1bpp } from "./dither.js";
 
-export const ACTIVE_EEVEE_SPRITE_SOURCE = "eevee-gen2-gold.png";
 // Flat official pixel sprites read cleaner on 1-bit LCDs when body tones become ink.
 export const SPRITE_CRISP_THRESHOLD = 200;
 
@@ -24,9 +23,7 @@ export async function loadSpriteGray(path, { size = 96 } = {}) {
 }
 
 export async function loadBuddySprite(species = "eevee", options = {}) {
-  const spriteUrl = species === "eevee"
-    ? new URL(`../../seed/sprites/_candidates/${ACTIVE_EEVEE_SPRITE_SOURCE}`, import.meta.url)
-    : new URL(`../../seed/sprites/${species}.png`, import.meta.url);
+  const spriteUrl = new URL(`../../seed/sprites/${species}.png`, import.meta.url);
   return loadSpriteGray(fileURLToPath(spriteUrl), { size: null, ...options });
 }
 
