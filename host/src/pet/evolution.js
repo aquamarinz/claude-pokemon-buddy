@@ -1,8 +1,13 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const TABLE = JSON.parse(
-  readFileSync(new URL("../../seed/evolution/eevee.json", import.meta.url), "utf8"),
-);
+const DIR = new URL("../../seed/evolution/", import.meta.url);
+const TABLE = {};
+for (const file of readdirSync(DIR)) {
+  if (file.endsWith(".json")) {
+    Object.assign(TABLE, JSON.parse(readFileSync(fileURLToPath(new URL(file, DIR)), "utf8")));
+  }
+}
 
 export function eligibleBranches(species, ctx = {}) {
   const node = TABLE[species];
@@ -27,6 +32,7 @@ export function resolveEvolution(species, ctx = {}) {
 function needsMet(needs, ctx) {
   return Object.entries(needs).every(([key, value]) => {
     if (key === "bond") return (ctx.bond ?? 0) >= value;
+    if (key === "level") return (ctx.level ?? 0) >= value;
     if (key === "stone") return ctx.stone === value;
     return ctx[key] === value;
   });

@@ -312,6 +312,7 @@ function evolutionContext({ pet, weather, room, now }) {
 
   return {
     bond: pet.bond,
+    level: pet.level,
     daytime,
     night: !daytime,
     care: careCount > 0,
