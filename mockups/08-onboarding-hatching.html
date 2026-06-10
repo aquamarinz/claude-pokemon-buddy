@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>08 · 孵化 onboarding — 1-bit 流程 mockup</title>
+<style>
+  body{margin:0;background:#0e0f12;color:#c9ccbf;font-family:"Courier New",monospace;
+       display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;}
+  h1{font-size:15px;letter-spacing:1px;text-transform:uppercase;color:#9bbc0f;margin:0;}
+  .screen{image-rendering:pixelated;border:3px solid #3a4049;border-radius:6px;background:#fff;}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;}
+  button{font-family:inherit;font-size:12px;background:#1b1e24;color:#ece9d8;border:1px solid #3a4049;
+         border-radius:4px;padding:6px 12px;cursor:pointer;}
+  button:hover{background:#272b33;}
+  .hint{font-size:12px;color:#8d93a0;max-width:540px;text-align:center;line-height:1.6;}
+  .step{color:#e23b2d;font-weight:bold;}
+</style>
+</head>
+<body>
+  <h1>孵化 Onboarding · 设备屏 400×300 · 1-bit</h1>
+  <canvas id="s" width="400" height="300" class="screen" style="width:600px;height:450px"></canvas>
+  <div class="bar">
+    <button onclick="prev()">◀ 上一屏</button>
+    <span id="label" class="step">1/5 大木开场白</span>
+    <button onclick="next()">下一屏 ▶</button>
+    <button onclick="key()">KEY（切候选/确认）</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+<script>
+const c = document.getElementById('s'), g = c.getContext('2d');
+const W=400, H=300, INK='#000', PAPER='#fff';
+const CANDS = [
+  {name:'伊布',    en:'EEVEE'},
+  {name:'妙蛙种子', en:'BULBASAUR'},
+  {name:'小火龙',  en:'CHARMANDER'},
+  {name:'杰尼龟',  en:'SQUIRTLE'},
+];
+let scene = 0;          // 0 oak, 1 choose, 2 hatch, 3 born, 4 dashboard-note
+let sel = 0;            // chosen candidate
+let oakPage = 0;
+const OAK = [
+  "……这个世界，",
+  "生活着被称为「宝可梦」的",
+  "神奇生物。",
+  "今天，一颗蛋交到了你手上。",
+];
+const LABELS = ["1/5 大木开场白","2/5 选蛋（KEY 切候选）","3/5 孵化动画","4/5 诞生 + 默认名","5/5 之后：dashboard 改名"];
+const HINTS = [
+  "首次开机：检测无 hatched 标志 → 进 onboarding。大木博士逐字开场白（彩蛋），KEY 翻页/跳过。",
+  "一颗蛋 + 4 候选（伊布 + 御三家）。KEY 循环切换高亮，BOOT 返回，KEY 长按确认选中。",
+  "选中后：蛋摇晃 → 裂纹 → 裂开 → 孵出，配孵化音（PLAY 帧）。低帧推屏（复用现有动效管线）。",
+  "孵出选中物种，给默认名（物种名）。写 hatched/species/name/bond=0 → 进日常养成。",
+  "想改名走 dashboard 的 settings（已有）。设备屏全程闭环，朋友插上即玩，不强制开网页。",
+];
+
+function clear(){ g.fillStyle=PAPER; g.fillRect(0,0,W,H); g.fillStyle=INK; g.strokeStyle=INK; }
+function px(t,x,y,size,align='left',weight=700){ g.font=`${weight} ${size}px "Courier New",monospace`;
+  g.textAlign=align; g.textBaseline='alphabetic'; g.fillText(t,x,y); }
+
+function egg(cx,cy,scale=1,crack=0,shake=0){
+  g.save(); g.translate(cx+shake, cy); g.scale(scale,scale); g.lineWidth=3;
+  g.beginPath(); g.ellipse(0,0,34,44,0,0,Math.PI*2); g.stroke();
+  // spots
+  g.fillStyle=INK;
+  [[-12,-8,5],[10,2,6],[-4,18,4],[14,-16,4]].forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  if(crack>0){ g.lineWidth=2; g.beginPath();
+    g.moveTo(-20,-6); g.lineTo(-6,2); g.lineTo(-14,10); g.lineTo(2,16);
+    if(crack>1){ g.moveTo(6,-20); g.lineTo(12,-4); g.lineTo(4,4); } g.stroke(); }
+  g.restore();
+}
+
+function critter(cx,cy){ // tiny 1-bit eevee-ish silhouette placeholder
+  g.save(); g.translate(cx,cy); g.fillStyle=INK; g.lineWidth=2;
+  g.beginPath(); g.ellipse(0,6,22,18,0,0,7); g.fill();           // body
+  g.beginPath(); g.arc(-2,-12,14,0,7); g.fill();                 // head
+  g.beginPath(); g.moveTo(-16,-20); g.lineTo(-22,-34); g.lineTo(-6,-22); g.fill(); // ear
+  g.beginPath(); g.moveTo(12,-20); g.lineTo(20,-34); g.lineTo(4,-22); g.fill();    // ear
+  g.fillStyle=PAPER; g.beginPath(); g.arc(-6,-12,2.4,0,7); g.fill(); g.beginPath(); g.arc(3,-12,2.4,0,7); g.fill();
+  g.restore();
+}
+
+function smallEgg(cx,cy,on,variant=0){
+  g.save(); g.translate(cx,cy); g.lineWidth=on?2.5:1.5;
+  g.beginPath(); g.ellipse(0,0,13,17,0,0,Math.PI*2); g.stroke();
+  g.fillStyle=INK;
+  const spots=[[[-5,-3,2],[4,1,2]],[[0,-5,2.5],[-3,5,2]],[[5,-2,2],[-4,3,1.8],[2,8,1.5]],[[-3,-1,2],[3,4,2.2]]][variant%4];
+  spots.forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  g.restore();
+}
+
+function frameBox(){ g.lineWidth=2; g.strokeRect(6,6,W-12,H-12); }
+
+function render(){
+  clear(); frameBox();
+  if(scene===0){                                   // 大木开场白
+    px('PROF. OAK',20,30,12,'left',800);
+    g.lineWidth=1; g.beginPath(); g.moveTo(20,38); g.lineTo(W-20,38); g.stroke(); g.lineWidth=2;
+    for(let i=0;i<=oakPage && i<OAK.length;i++) px(OAK[i],28,84+i*34,18,'left',700);
+    px('▶ KEY',W-26,H-22,12,'right',700);
+  } else if(scene===1){                             // 选蛋（蛋缩略图）
+    px('选择你的伙伴',W/2,30,16,'center',800);
+    egg(W/2,104,1.0,0,0);                            // 中央：当前选中的蛋（放大预览）
+    px(CANDS[sel].name,W/2,166,13,'center',800);
+    // 4 egg thumbnails（花纹随物种略变 + 名 + 编号）
+    const bx=24, bw=(W-48-18)/4;
+    CANDS.forEach((cd,i)=>{
+      const x=bx+i*(bw+6), y=186, h=80, on=i===sel;
+      g.lineWidth = on?3:1; g.strokeRect(x,y,bw,h);
+      smallEgg(x+bw/2, y+27, on, i);
+      px(cd.name,x+bw/2,y+60,11,'center',on?800:600);
+      px('#'+(i+1),x+bw/2,y+74,9,'center',600);
+    });
+    px('◀ KEY 切换   长按 KEY 确认 ▶',W/2,H-14,11,'center',600);
+  } else if(scene===2){                             // 孵化动画（示意 3 帧叠加说明）
+    px('孵化中…',W/2,34,16,'center',800);
+    egg(120,150,1.1,0,-4); px('摇晃',120,214,11,'center',600);
+    egg(220,150,1.1,1,3);  px('裂纹',220,214,11,'center',600);
+    egg(310,150,1.1,2,0);  px('裂开',310,214,11,'center',600);
+    px('♪ 孵化音（PLAY 帧）',W/2,H-18,11,'center',600);
+  } else if(scene===3){                             // 诞生 + 默认名
+    critter(W/2,120);
+    px(CANDS[sel].name+' 诞生了！',W/2,200,18,'center',800);
+    px('默认名：'+CANDS[sel].name,W/2,228,13,'center',600);
+    px('▶ KEY 开始养成',W/2,H-22,12,'center',700);
+  } else {                                          // dashboard 改名说明
+    critter(120,150);
+    px('Lv.1  ♡♡♡♡♡  bond 0',150,120,13,'left',700);
+    px('想改名？',150,150,14,'left',800);
+    px('dashboard → settings',150,176,12,'left',600);
+    px('设备屏闭环 · 不强制开网页',150,202,11,'left',600);
+  }
+  document.getElementById('label').textContent = LABELS[scene];
+  document.getElementById('hint').innerHTML = '<span class="step">'+LABELS[scene].split(' ')[0]+'</span> '+HINTS[scene];
+}
+
+function next(){ if(scene===0 && oakPage<OAK.length-1){ oakPage++; } else { scene=Math.min(4,scene+1); oakPage=OAK.length-1;} render(); }
+function prev(){ if(scene===0 && oakPage>0){ oakPage--; } else { scene=Math.max(0,scene-1); if(scene===0)oakPage=OAK.length-1;} render(); }
+function key(){ if(scene===1){ sel=(sel+1)%CANDS.length; } else { next(); } render(); }
+window.prev=prev; window.next=next; window.key=key;
+document.addEventListener('keydown',e=>{ if(e.key==='ArrowRight')next(); else if(e.key==='ArrowLeft')prev(); else if(e.key===' '){e.preventDefault();key();} });
+render();
+</script>
+</body>
+</html>
