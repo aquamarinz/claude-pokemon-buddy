@@ -31,3 +31,19 @@ test("applyDailyGrowth respects the daily bond soft cap", () => {
 
   assert.equal(out.bond, PARAMS.bondSoftCap);
 });
+
+test("evolveBond is the ~2-week-from-zero threshold (56)", () => {
+  assert.equal(PARAMS.evolveBond, 56);
+});
+
+test("newborn bond 0 reaches evolveBond in ~14 active days at bondPerActiveDay", () => {
+  let pet = { level: 1, exp: 0, bond: 0, todayCreditedExp: 0, todayCreditedBond: 0, lastGrowthDay: null };
+  let days = 0;
+  for (let i = 0; i < 30; i += 1) {
+    const day = `2026-06-${String(10 + i).padStart(2, "0")}`;
+    pet = applyDailyGrowth(pet, { todayTokens: 60_000, today: day });
+    days += 1;
+    if (pet.bond >= PARAMS.evolveBond) break;
+  }
+  assert.ok(days >= 12 && days <= 16, `expected ~14 days, got ${days}`);
+});

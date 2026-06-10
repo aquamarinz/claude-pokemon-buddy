@@ -36,7 +36,7 @@ test("single eligible branch auto-evolves", () => {
     candidates: [
       {
         to: "umbreon",
-        needs: { bond: 160, night: true },
+        needs: { bond: 56, night: true },
         priority: 2,
       },
     ],
