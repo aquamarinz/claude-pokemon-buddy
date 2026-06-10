@@ -40,7 +40,7 @@ export async function renderOnboarding(scene) {
 }
 
 function drawOak(g, lines) {
-  px(g, "PROF. OAK", 20, 30, 12, "left", 800);
+  px(g, "大木博士", 20, 30, 12, "left", 800);
   g.lineWidth = 1;
   line(g, 20, 38, W - 20, 38);
   g.lineWidth = 2;
