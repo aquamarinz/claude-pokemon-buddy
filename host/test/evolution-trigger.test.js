@@ -18,6 +18,7 @@ test("bond threshold marks ready without auto-evolving species", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath }),
   });
 
   assert.equal(state.species, "eevee");

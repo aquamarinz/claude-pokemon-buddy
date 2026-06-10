@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runOneTick } from "../src/index.js";
+import { createMockTransport } from "../src/transport/mock.js";
 
 test("one tick produces frame and advances state", async () => {
   const statePath = join("out", "test-state.json");
@@ -34,6 +35,7 @@ test("one tick produces frame and advances state", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
   });
 
@@ -57,6 +59,7 @@ test("same-day usage growth credits only new token progress", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
   });
   const second = await runOneTick({
@@ -65,6 +68,7 @@ test("same-day usage growth credits only new token progress", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
   });
 
@@ -88,6 +92,7 @@ test("fresh pet state rolls personality on first tick", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
     personalityRng: sequenceRng([0.12, 0.22, 0.32, 0.42, 0.52, 0.62, 0.2]),
   });
@@ -112,6 +117,7 @@ test("existing pet keeps personality across ticks", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
     personalityRng: sequenceRng([0.12, 0.22, 0.32, 0.42, 0.52, 0.62, 0.2]),
   });
@@ -121,6 +127,7 @@ test("existing pet keeps personality across ticks", async () => {
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
     personalityRng: sequenceRng([0.99, 0.98, 0.97, 0.96, 0.95, 0.94, 0.93]),
   });
@@ -141,6 +148,7 @@ test("old pet state missing personality is migrated on first tick", async () => 
     statePath,
     JSON.stringify({
       schemaVersion: 1,
+      hatched: true,
       species: "eevee",
       level: 1,
       exp: 4,
@@ -160,6 +168,7 @@ test("old pet state missing personality is migrated on first tick", async () => 
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-30",
     personalityRng: sequenceRng([0.03, 0.13, 0.23, 0.33, 0.43, 0.53, 0.63]),
   });
@@ -181,6 +190,7 @@ test("cross-day settlement freezes yesterday once and stays idempotent", async (
     statePath,
     JSON.stringify({
       schemaVersion: 1,
+      hatched: true,
       species: "eevee",
       level: 1,
       exp: 4,
@@ -200,6 +210,7 @@ test("cross-day settlement freezes yesterday once and stays idempotent", async (
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-31",
   });
   const second = await runOneTick({
@@ -208,6 +219,7 @@ test("cross-day settlement freezes yesterday once and stays idempotent", async (
     room: { t: 23.4, h: 56 },
     statePath,
     framePath,
+    mock: createMockTransport({ framePath }),
     today: "2026-05-31",
   });
 
