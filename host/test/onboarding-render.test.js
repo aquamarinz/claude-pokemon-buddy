@@ -15,3 +15,17 @@ for (const scene of [
     assert.ok(pngBuffer && pngBuffer.length > 0);
   });
 }
+
+const HATCH_END = 5; // HATCH_FRAMES - 1
+
+test("hatch end-frame shows the chosen species' real sprite", async () => {
+  const bulba = await renderOnboarding({ kind: "hatch", frame: HATCH_END, species: "bulbasaur" });
+  const eevee = await renderOnboarding({ kind: "hatch", frame: HATCH_END, species: "eevee" });
+  assert.ok(!bulba.pngBuffer.equals(eevee.pngBuffer), "different species must render different end-frame sprites");
+});
+
+test("hatch mid-frame egg animation is species-agnostic", async () => {
+  const bulba = await renderOnboarding({ kind: "hatch", frame: 0, species: "bulbasaur" });
+  const eevee = await renderOnboarding({ kind: "hatch", frame: 0, species: "eevee" });
+  assert.ok(bulba.pngBuffer.equals(eevee.pngBuffer), "non-end frames are just the egg, identical across species");
+});

@@ -30,7 +30,7 @@ export async function renderOnboarding(scene) {
 
   if (scene.kind === "oak") drawOak(g, scene.lines ?? []);
   else if (scene.kind === "choose") drawChoose(g, scene.candidates ?? [], scene.sel ?? 0);
-  else if (scene.kind === "hatch") drawHatch(g, scene.frame ?? 0);
+  else if (scene.kind === "hatch") await drawHatch(g, scene.frame ?? 0, scene.species);
   else if (scene.kind === "born") {
     const sprite = await loadBuddySprite(scene.species ?? "eevee");
     drawBorn(g, scene.name, sprite);
@@ -71,11 +71,17 @@ function drawChoose(g, candidates, sel) {
   px(g, "KEY 切换 · 长按确认", W / 2, H - 16, 12, "center", 600);
 }
 
-function drawHatch(g, frame) {
+async function drawHatch(g, frame, species) {
   const f = Math.max(0, Math.min(HATCH_FRAMES - 1, frame));
   px(g, "孵化中…", W / 2, 40, 24, "center", 800);
   if (f >= HATCH_FRAMES - 1) {
-    critter(g, W / 2, 150);
+    // 末帧揭晓所选物种真 sprite; species 缺省(旧调用)回退占位轮廓
+    const sprite = species ? await loadBuddySprite(species) : null;
+    if (sprite && sprite.gray && !sprite.placeholder) {
+      drawSprite(g, sprite.gray, { x: W / 2 - 68, y: 82, maxSize: 136, srcW: sprite.w, srcH: sprite.h, scale: 3 });
+    } else {
+      critter(g, W / 2, 150);
+    }
   } else {
     const crack = f < 2 ? 0 : f < 4 ? 1 : 2;
     const shake = f % 2 === 0 ? -4 : 4;

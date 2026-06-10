@@ -26,9 +26,9 @@ export async function runOnboarding(io) {
   }
   const chosen = CANDIDATES[sel];
 
-  // 孵化动画 + 音
+  // 孵化动画 + 音; 末帧揭晓所选物种真 sprite
   for (let f = 0; f < HATCH_FRAMES; f += 1) {
-    await io.push(await renderOnboarding({ kind: "hatch", frame: f }));
+    await io.push(await renderOnboarding({ kind: "hatch", frame: f, species: chosen.species }));
     await io.delay(HATCH_FRAME_MS);
   }
   io.playSound(SOUND.EVOLVE); // 复用进化 fanfare 作孵化音
