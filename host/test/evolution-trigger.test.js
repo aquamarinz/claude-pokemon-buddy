@@ -92,6 +92,7 @@ function writeState(statePath, overrides) {
     statePath,
     JSON.stringify({
       schemaVersion: 1,
+      hatched: true,
       species: "eevee",
       level: 1,
       exp: 0,

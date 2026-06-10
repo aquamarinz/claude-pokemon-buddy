@@ -248,34 +248,39 @@ function adaptPngTransport(transport) {
   };
 }
 
-function ensurePet(state, today, personalityRng = Math.random) {
-  const pet = state?.level
-    ? {
-        species: "eevee",
-        exp: 0,
-        bond: 120,
-        streak: 0,
-        shield: 0,
-        lastSettled: today,
-        lastGrowthDay: null,
-        todayCreditedExp: 0,
-        todayCreditedBond: 0,
-        ...state,
-      }
-    : {
-        ...state,
-        species: "eevee",
-        level: 1,
-        exp: 0,
-        bond: 120,
-        streak: 0,
-        shield: 0,
-        lastSettled: today,
-        lastGrowthDay: null,
-        todayCreditedExp: 0,
-        todayCreditedBond: 0,
-      };
+export function ensurePet(state, today, personalityRng = Math.random) {
+  // No hatched flag = fresh start (or pre-hatched dirty save) → newborn from bond 0.
+  // (2b inserts the egg/choose/hatch flow before this; for now it's a plain eevee newborn.)
+  if (!state?.hatched) {
+    return {
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 0,
+      shield: 0,
+      lastSettled: today,
+      lastGrowthDay: null,
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      hatched: true,
+      ...rollPersonality(personalityRng),
+    };
+  }
 
+  const pet = {
+    species: "eevee",
+    level: 1,
+    exp: 0,
+    bond: 0,
+    streak: 0,
+    shield: 0,
+    lastSettled: today,
+    lastGrowthDay: null,
+    todayCreditedExp: 0,
+    todayCreditedBond: 0,
+    ...state,
+  };
   return hasPersonality(pet) ? pet : { ...pet, ...rollPersonality(personalityRng) };
 }
 
