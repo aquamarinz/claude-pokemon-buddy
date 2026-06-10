@@ -36,6 +36,7 @@ function wrapMockTransport(mock) {
     async push(frame) {
       return mock.push(frame?.pngBuffer ?? frame);
     },
+    close() {},
   };
 }
 

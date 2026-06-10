@@ -8,6 +8,7 @@ import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
+import { runOnboarding } from "./pet/onboarding.js";
 import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
@@ -139,6 +140,15 @@ export async function main({
 } = {}) {
   let config = loadConfig(configPath);
   const transport = await createTransport({ framePath });
+
+  await runOnboardingGate({
+    statePath,
+    onboarding: async () => {
+      const { io, off } = makeOnboardingIo(transport);
+      try { return await runOnboarding(io); } finally { off?.(); }
+    },
+  });
+
   const weatherClient = makeWeather();
   let lastKnownUsage = null;
   let stopped = false;
@@ -162,6 +172,7 @@ export async function main({
     stopped = true;
     if (timer) clearTimeout(timer);
     dashboardServer?.close().catch(() => {});
+    transport.close?.();
   };
 
   process.once("SIGINT", stop);
@@ -246,6 +257,41 @@ function adaptPngTransport(transport) {
       return transport.push(frame?.pngBuffer ?? frame);
     },
   };
+}
+
+export async function runOnboardingGate({
+  statePath,
+  today = localYmd(new Date()),
+  onboarding,             // 注入：() => Promise<{species,name}>（真实由 transport io 驱动）
+  personalityRng = Math.random,
+}) {
+  const existing = loadState(statePath);
+  if (existing?.hatched) return existing;
+  const { species, name } = await onboarding();
+  mkdirSync(dirname(statePath), { recursive: true });
+  const newborn = makeNewborn(species, name, today, personalityRng);
+  saveState(statePath, newborn);
+  return newborn;
+}
+
+function makeNewborn(species, name, today, personalityRng = Math.random) {
+  return {
+    species, name, level: 1, exp: 0, bond: 0, streak: 0, shield: 0,
+    lastSettled: today, lastGrowthDay: null, todayCreditedExp: 0, todayCreditedBond: 0,
+    hatched: true, ...rollPersonality(personalityRng),
+  };
+}
+
+function makeOnboardingIo(transport) {
+  let resolveBtn = null;
+  const off = transport.onButton?.((b) => { const r = resolveBtn; resolveBtn = null; r?.(b); });
+  const io = {
+    push: (frame) => transport.push(frame),
+    nextButton: () => new Promise((res) => { resolveBtn = res; }),
+    playSound: (id) => transport.playSound?.(id),
+    delay: (ms) => new Promise((res) => setTimeout(res, ms)),
+  };
+  return { io, off };
 }
 
 export function ensurePet(state, today, personalityRng = Math.random) {
