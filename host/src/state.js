@@ -78,6 +78,8 @@ function salvageState(state) {
   copyString(out, state, "lastSettled");
   copyString(out, state, "lastGrowthDay");
   copyBoolean(out, state, "readyToEvolve");
+  copyBoolean(out, state, "hatched");
+  copyString(out, state, "name");
   if (Array.isArray(state.pendingCandidates)) out.pendingCandidates = state.pendingCandidates;
   return out;
 }

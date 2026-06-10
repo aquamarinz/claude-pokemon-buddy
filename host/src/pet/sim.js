@@ -5,7 +5,7 @@ export const PARAMS = {
   dailyBondCap: 6,
   bondPerActiveDay: 4,
   bondSoftCap: 180,
-  evolveBond: 160,
+  evolveBond: 56,
   costSpikeUSD: 30,
 };
 
