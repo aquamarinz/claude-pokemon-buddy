@@ -8,6 +8,13 @@ const SPECIES = {
   espeon: { dex: 196, label: "太阳伊布 Espeon" },
   umbreon: { dex: 197, label: "月亮伊布 Umbreon" },
   snorlax: { dex: 143, label: "卡比兽 Snorlax" },
+  ivysaur: { dex: 2, label: "妙蛙草 Ivysaur" },
+  venusaur: { dex: 3, label: "妙蛙花 Venusaur" },
+  charmeleon: { dex: 5, label: "火恐龙 Charmeleon" },
+  charizard: { dex: 6, label: "喷火龙 Charizard" },
+  squirtle: { dex: 7, label: "杰尼龟 Squirtle" },
+  wartortle: { dex: 8, label: "卡咪龟 Wartortle" },
+  blastoise: { dex: 9, label: "水箭龟 Blastoise" },
 };
 const IV_LABELS = ["HP", "攻", "防", "速", "特攻", "特防"];
 const SECRET_LABELS = {
