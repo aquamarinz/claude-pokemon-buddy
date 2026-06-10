@@ -6,6 +6,10 @@ import { H, W } from "./palette.js";
 
 export async function renderFrame(model) {
   const image = drawGray(model);
+  return imageDataToFrame(image);
+}
+
+export async function imageDataToFrame(image) {
   const gray = rgbaToGray(image.data, W, H);
   const bitmap = grayToBitmap(gray, W, H);
   const pngBuffer = await bitmapToPng(bitmap);
