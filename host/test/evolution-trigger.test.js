@@ -85,6 +85,80 @@ test("stone overrides RTC branch when KEY triggers evolution", async () => {
   assert.equal(state.readyToEvolve, false);
 });
 
+test("starter reaching its level threshold is ready (table-driven, not bond)", async () => {
+  const statePath = join("out", "test-bulba-ready-state.json");
+  const framePath = join("out", "test-bulba-ready-frame.png");
+  writeState(statePath, { species: "bulbasaur", level: 14, bond: 0 });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath }),
+  });
+
+  assert.equal(state.species, "bulbasaur");
+  assert.equal(state.readyToEvolve, true);
+});
+
+test("KEY evolves a level-ready Bulbasaur to Ivysaur", async () => {
+  const statePath = join("out", "test-bulba-evolve-state.json");
+  const framePath = join("out", "test-bulba-evolve-frame.png");
+  writeState(statePath, { species: "bulbasaur", level: 14, bond: 0 });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: mockPressingKey(framePath),
+  });
+
+  assert.equal(state.species, "ivysaur");
+  assert.equal(state.readyToEvolve, false);
+});
+
+test("high bond below the level threshold is NOT ready (dead-window regression)", async () => {
+  // Under the old bond>=56 trigger, an Ivysaur with bond 100 would falsely show
+  // readyToEvolve until level 30. Table-driven resolution must recompute false.
+  const statePath = join("out", "test-ivy-deadwindow-state.json");
+  const framePath = join("out", "test-ivy-deadwindow-frame.png");
+  writeState(statePath, { species: "ivysaur", level: 20, bond: 100, readyToEvolve: true });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath }),
+  });
+
+  assert.equal(state.species, "ivysaur");
+  assert.equal(state.readyToEvolve, false);
+});
+
+test("KEY evolves a level-30 Ivysaur to Venusaur", async () => {
+  const statePath = join("out", "test-ivy-evolve-state.json");
+  const framePath = join("out", "test-ivy-evolve-frame.png");
+  writeState(statePath, { species: "ivysaur", level: 30, bond: 0 });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: mockPressingKey(framePath),
+  });
+
+  assert.equal(state.species, "venusaur");
+  assert.equal(state.readyToEvolve, false);
+});
+
 function writeState(statePath, overrides) {
   rmSync(statePath, { force: true });
   rmSync(`${statePath}.bak`, { force: true });

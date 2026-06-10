@@ -83,12 +83,13 @@ export async function runOneTick({
 
   pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });
 
-  if (pet.bond >= PARAMS.evolveBond || pet.stone) {
-    pet = { ...pet, readyToEvolve: true };
-  }
+  // Table-driven: resolve once against the evolution tables, recompute readiness
+  // every tick (can fall back to false), and reuse the same resolution for KEY.
+  const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
+  const readyToEvolve = Boolean(evolution.auto || evolution.candidates.length > 0);
+  pet = { ...pet, readyToEvolve };
 
-  if (pet.readyToEvolve && hasKeyPress(buttonEvents)) {
-    const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
+  if (readyToEvolve && hasKeyPress(buttonEvents)) {
     if (evolution.auto) {
       pet = evolvePet(pet, evolution.auto);
       activeTransport.playSound?.(SOUND.EVOLVE);   // celebrate the evolution
