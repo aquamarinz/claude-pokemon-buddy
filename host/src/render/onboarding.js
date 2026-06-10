@@ -2,7 +2,8 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 import { H, INK, PAPER, W } from "./palette.js";
 import { imageDataToFrame } from "./frame.js";
-import { ZPIX_FONT_PATH } from "./layout.js";
+import { ZPIX_FONT_PATH, drawSprite } from "./layout.js";
+import { loadBuddySprite } from "./sprites.js";
 
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
 const MONO = '"Zpix"';
@@ -30,7 +31,10 @@ export async function renderOnboarding(scene) {
   if (scene.kind === "oak") drawOak(g, scene.lines ?? []);
   else if (scene.kind === "choose") drawChoose(g, scene.candidates ?? [], scene.sel ?? 0);
   else if (scene.kind === "hatch") drawHatch(g, scene.frame ?? 0);
-  else if (scene.kind === "born") drawBorn(g, scene.name);
+  else if (scene.kind === "born") {
+    const sprite = await loadBuddySprite(scene.species ?? "eevee");
+    drawBorn(g, scene.name, sprite);
+  }
 
   return imageDataToFrame(g.getImageData(0, 0, W, H));
 }
@@ -45,45 +49,49 @@ function drawOak(g, lines) {
 }
 
 function drawChoose(g, candidates, sel) {
-  px(g, "选择你的伙伴", W / 2, 30, 16, "center", 800);
-  egg(g, W / 2, 104, 1.0, 0, 0);
+  px(g, "选择你的伙伴", W / 2, 36, 24, "center", 800);
+  egg(g, W / 2, 112, 1.0, 0, 0);
   const chosen = candidates[sel];
-  if (chosen) px(g, chosen.name, W / 2, 166, 13, "center", 800);
+  if (chosen) px(g, chosen.name, W / 2, 178, 24, "center", 800); // 中央大名(选中物种, 24px 清)
 
+  // 候选 chip：只蛋 + 编号(去掉糊的小中文名，靠中央大名识别)
   const bx = 24;
   const bw = (W - 48 - 18) / 4;
-  candidates.forEach((cd, i) => {
+  candidates.forEach((_, i) => {
     const x = bx + i * (bw + 6);
-    const y = 186;
-    const h = 80;
+    const y = 194;
+    const h = 64;
     const on = i === sel;
     g.lineWidth = on ? 3 : 1;
     g.strokeRect(x, y, bw, h);
-    smallEgg(g, x + bw / 2, y + 27, on, i);
-    px(g, cd.name, x + bw / 2, y + 60, 11, "center", on ? 800 : 600);
-    px(g, "#" + (i + 1), x + bw / 2, y + 74, 9, "center", 600);
+    smallEgg(g, x + bw / 2, y + 28, on, i);
+    px(g, "#" + (i + 1), x + bw / 2, y + 56, 12, "center", on ? 800 : 600);
   });
   g.lineWidth = 2;
-  px(g, "◀ KEY 切换   长按 KEY 确认 ▶", W / 2, H - 14, 11, "center", 600);
+  px(g, "KEY 切换 · 长按确认", W / 2, H - 16, 12, "center", 600);
 }
 
 function drawHatch(g, frame) {
   const f = Math.max(0, Math.min(HATCH_FRAMES - 1, frame));
-  px(g, "孵化中…", W / 2, 34, 16, "center", 800);
+  px(g, "孵化中…", W / 2, 40, 24, "center", 800);
   if (f >= HATCH_FRAMES - 1) {
-    critter(g, W / 2, 140);
+    critter(g, W / 2, 150);
   } else {
     const crack = f < 2 ? 0 : f < 4 ? 1 : 2;
     const shake = f % 2 === 0 ? -4 : 4;
     egg(g, W / 2, 150, 1.4, crack, shake);
   }
-  px(g, "♪ 孵化音", W / 2, H - 18, 11, "center", 600);
+  px(g, "♪ 孵化音", W / 2, H - 18, 12, "center", 600);
 }
 
-function drawBorn(g, name) {
-  critter(g, W / 2, 120);
-  px(g, name + " 诞生了！", W / 2, 200, 18, "center", 800);
-  px(g, "默认名：" + name, W / 2, 228, 13, "center", 600);
+function drawBorn(g, name, sprite) {
+  if (sprite && sprite.gray && !sprite.placeholder) {
+    drawSprite(g, sprite.gray, { x: W / 2 - 68, y: 30, maxSize: 136, srcW: sprite.w, srcH: sprite.h, scale: 3 });
+  } else {
+    critter(g, W / 2, 90);
+  }
+  px(g, name + " 诞生了！", W / 2, 196, 24, "center", 800);
+  px(g, "默认名 " + name, W / 2, 226, 12, "center", 600);
   px(g, "▶ KEY 开始养成", W / 2, H - 22, 12, "center", 700);
 }
 
