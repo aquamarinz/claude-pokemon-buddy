@@ -48,7 +48,7 @@ async function drawOak(g, lines, page = 1, total = lines.length || 1) {
   drawSprite(g, oak.gray, { x: W / 2 - 63, y: 42, maxSize: 126, srcW: oak.w, srcH: oak.h, scale: 2 });
   lines.forEach((text, i) => px(g, text, W / 2, 190 + i * 27, 24, "center", 700)); // 24px=Zpix整数倍, 清晰
   drawPageDots(g, page, total, W / 2 - 70, H - 14);
-  px(g, "▶ KEY", W - 26, H - 14, 12, "right", 700);
+  px(g, "→ KEY", W - 26, H - 14, 12, "right", 700); // → (Zpix 有; ▶ 缺→糊)
 }
 
 function drawPageDots(g, page, total, cx, y) {
@@ -116,29 +116,25 @@ async function drawHatch(g, frame, species) {
 }
 
 function drawBorn(g, name, sprite) {
-  rays(g, W / 2, 102, 82, 108, 12);
+  rays(g, W / 2, 96, 82, 108, 12, { skipBelowY: 176 }); // 跳过穿标题(y196)的向下射线
   if (sprite && sprite.gray && !sprite.placeholder) {
     drawSprite(g, sprite.gray, { x: W / 2 - 68, y: 30, maxSize: 136, srcW: sprite.w, srcH: sprite.h, scale: 3 });
   } else {
     critter(g, W / 2, 90);
   }
-  px(g, `✦ ${name} 诞生了！ ✦`, W / 2, 196, 24, "center", 800);
+  px(g, `★ ${name} 诞生了！ ★`, W / 2, 196, 24, "center", 800); // ★ (Zpix 有字形; ✦ 缺→糊)
   px(g, `默认名 ${name} · 想改名去 dashboard`, W / 2, 226, 12, "center", 600);
-  px(g, "▶ KEY 开始养成", W / 2, H - 22, 12, "center", 700);
+  px(g, "→ KEY 开始养成", W / 2, H - 22, 12, "center", 700); // → (Zpix 有; ▶ 缺→糊)
 }
 
-function rays(g, cx, cy, inner, outer, count) {
+function rays(g, cx, cy, inner, outer, count, { skipBelowY = Infinity } = {}) {
   g.save();
   g.lineWidth = 2;
   for (let i = 0; i < count; i += 1) {
     const a = (Math.PI * 2 * i) / count;
-    line(
-      g,
-      cx + Math.cos(a) * inner,
-      cy + Math.sin(a) * inner,
-      cx + Math.cos(a) * outer,
-      cy + Math.sin(a) * outer,
-    );
+    const oy = cy + Math.sin(a) * outer;
+    if (oy > skipBelowY) continue; // 跳过端点过低(会穿过下方文字)的射线
+    line(g, cx + Math.cos(a) * inner, cy + Math.sin(a) * inner, cx + Math.cos(a) * outer, oy);
   }
   g.restore();
 }

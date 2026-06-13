@@ -59,7 +59,7 @@ export async function renderEvolutionFrame(kind, { species, fromSpecies, toSpeci
   if (kind === "reveal") {
     rays(g, W / 2, 116, 76, 106, 12);
     await drawCenteredSprite(g, target, 44, 156);
-    px(g, `✦ ${zhName(fromSpecies)} 进化成了 ${zhName(toSpecies)}！ ✦`, W / 2, 238, 18, "center", 800);
+    px(g, `★ ${zhName(fromSpecies)} 进化成了 ${zhName(toSpecies)}！ ★`, W / 2, 240, 12, "center", 800); // ★+12px (✦缺字形/18非整数倍→糊; 12px 长物种名也不溢出)
   } else {
     px(g, "进化中…", W / 2, 44, 24, "center", 800);
     await drawCenteredSprite(g, target, 68, 156);
