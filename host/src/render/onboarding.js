@@ -50,21 +50,21 @@ function drawOak(g, lines) {
 
 function drawChoose(g, candidates, sel) {
   px(g, "选择你的伙伴", W / 2, 36, 24, "center", 800);
-  egg(g, W / 2, 112, 1.0, 0, 0);
   const chosen = candidates[sel];
+  drawEgg(g, chosen?.species ?? "eevee", W / 2, 112, 1.0);
   if (chosen) px(g, chosen.name, W / 2, 178, 24, "center", 800); // 中央大名(选中物种, 24px 清)
 
   // 候选 chip：只蛋 + 编号(去掉糊的小中文名，靠中央大名识别)
   const bx = 24;
   const bw = (W - 48 - 18) / 4;
-  candidates.forEach((_, i) => {
+  candidates.forEach((candidate, i) => {
     const x = bx + i * (bw + 6);
     const y = 194;
     const h = 64;
     const on = i === sel;
     g.lineWidth = on ? 3 : 1;
     g.strokeRect(x, y, bw, h);
-    smallEgg(g, x + bw / 2, y + 28, on, i);
+    drawEgg(g, candidate.species, x + bw / 2, y + 28, 0.42);
     px(g, "#" + (i + 1), x + bw / 2, y + 56, 12, "center", on ? 800 : 600);
   });
   g.lineWidth = 2;
@@ -85,7 +85,7 @@ async function drawHatch(g, frame, species) {
   } else {
     const crack = f < 2 ? 0 : f < 4 ? 1 : 2;
     const shake = f % 2 === 0 ? -4 : 4;
-    egg(g, W / 2, 150, 1.4, crack, shake);
+    drawEgg(g, species ?? "eevee", W / 2, 150, 1.4, { crack, shake });
   }
   px(g, "♪ 孵化音", W / 2, H - 18, 12, "center", 600);
 }
@@ -101,35 +101,139 @@ function drawBorn(g, name, sprite) {
   px(g, "▶ KEY 开始养成", W / 2, H - 22, 12, "center", 700);
 }
 
-function egg(g, cx, cy, scale = 1, crack = 0, shake = 0) {
+function drawEgg(g, species, cx, cy, scale = 1, { crack = 0, shake = 0 } = {}) {
+  const fn = EGG_SHAPES[species] ?? EGG_SHAPES.eevee;
   g.save();
   g.translate(cx + shake, cy);
   g.scale(scale, scale);
   g.lineWidth = 3;
+  fn(g);
+  if (crack > 0) drawCrack(g, crack);
+  g.restore();
+}
+
+const EGG_SHAPES = {
+  eevee: eggEevee,
+  bulbasaur: eggBulbasaur,
+  charmander: eggCharmander,
+  squirtle: eggSquirtle,
+};
+
+function eggEevee(g) {
   g.beginPath();
   g.ellipse(0, 0, 34, 44, 0, 0, Math.PI * 2);
   g.stroke();
-  g.fillStyle = INK;
-  [[-12, -8, 5], [10, 2, 6], [-4, 18, 4], [14, -16, 4]].forEach(([x, y, r]) => {
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(-29, 3);
+  g.lineTo(-19, -4);
+  g.lineTo(-10, 5);
+  g.lineTo(0, -4);
+  g.lineTo(10, 5);
+  g.lineTo(20, -4);
+  g.lineTo(29, 3);
+  g.stroke();
+  [[-13, -13, 5], [12, -7, 4], [-4, 21, 4]].forEach(([x, y, r]) => {
     g.beginPath();
     g.arc(x, y, r, 0, 7);
     g.fill();
   });
-  if (crack > 0) {
-    g.lineWidth = 2;
+}
+
+function eggBulbasaur(g) {
+  g.beginPath();
+  g.ellipse(0, 2, 35, 43, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(0, -41);
+  g.quadraticCurveTo(-3, -52, 5, -59);
+  g.stroke();
+  leaf(g, -12, -51, -24, -62, -4, -60);
+  leaf(g, 10, -52, 25, -60, 5, -62);
+  g.beginPath();
+  g.arc(8, -58, 6, 0.6, Math.PI * 1.8);
+  g.stroke();
+  leaf(g, -12, -8, -25, -18, -6, -25);
+  leaf(g, 15, 4, 28, -2, 8, -14);
+  leaf(g, -1, 22, -16, 19, 8, 8);
+}
+
+function eggCharmander(g) {
+  g.beginPath();
+  g.moveTo(0, -50);
+  g.bezierCurveTo(32, -25, 36, 28, 0, 46);
+  g.bezierCurveTo(-36, 28, -32, -25, 0, -50);
+  g.closePath();
+  g.stroke();
+  g.lineWidth = 2;
+  triangle(g, -7, -52, 0, -69, 7, -52, true);
+  triangle(g, -22, -16, -12, -33, -5, -13, true);
+  triangle(g, 7, 5, 16, -14, 23, 8, true);
+  triangle(g, -8, 23, 1, 7, 10, 25, true);
+}
+
+function eggSquirtle(g) {
+  g.beginPath();
+  g.ellipse(0, 2, 38, 40, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.save();
+  g.beginPath();
+  g.ellipse(0, 2, 34, 36, 0, 0, Math.PI * 2);
+  g.clip();
+  g.lineWidth = 2;
+  [-17, -3, 12].forEach((y) => {
     g.beginPath();
-    g.moveTo(-20, -6);
-    g.lineTo(-6, 2);
-    g.lineTo(-14, 10);
-    g.lineTo(2, 16);
-    if (crack > 1) {
-      g.moveTo(6, -20);
-      g.lineTo(12, -4);
-      g.lineTo(4, 4);
-    }
+    g.moveTo(-34, y);
+    g.bezierCurveTo(-15, y + 4, 15, y - 4, 34, y);
     g.stroke();
-  }
+  });
+  g.beginPath();
+  g.moveTo(-14, -29);
+  g.bezierCurveTo(-4, -13, -5, 16, -15, 34);
+  g.moveTo(14, -29);
+  g.bezierCurveTo(4, -13, 5, 16, 15, 34);
+  g.stroke();
   g.restore();
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(-19, -43);
+  g.quadraticCurveTo(-11, -50, -3, -43);
+  g.quadraticCurveTo(6, -35, 17, -43);
+  g.stroke();
+}
+
+function drawCrack(g, crack) {
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(-20, -6);
+  g.lineTo(-6, 2);
+  g.lineTo(-14, 10);
+  g.lineTo(2, 16);
+  if (crack > 1) {
+    g.moveTo(6, -20);
+    g.lineTo(12, -4);
+    g.lineTo(4, 4);
+  }
+  g.stroke();
+}
+
+function leaf(g, x1, y1, x2, y2, x3, y3) {
+  g.beginPath();
+  g.moveTo(x1, y1);
+  g.quadraticCurveTo(x2, y2, x3, y3);
+  g.quadraticCurveTo((x1 + x3) / 2, (y1 + y3) / 2, x1, y1);
+  g.fill();
+}
+
+function triangle(g, x1, y1, x2, y2, x3, y3, fill = false) {
+  g.beginPath();
+  g.moveTo(x1, y1);
+  g.lineTo(x2, y2);
+  g.lineTo(x3, y3);
+  g.closePath();
+  if (fill) g.fill();
+  else g.stroke();
 }
 
 function critter(g, cx, cy) {
@@ -162,28 +266,6 @@ function critter(g, cx, cy) {
   g.fill();
   g.restore();
   g.fillStyle = INK;
-}
-
-function smallEgg(g, cx, cy, on, variant = 0) {
-  g.save();
-  g.translate(cx, cy);
-  g.lineWidth = on ? 2.5 : 1.5;
-  g.beginPath();
-  g.ellipse(0, 0, 13, 17, 0, 0, Math.PI * 2);
-  g.stroke();
-  g.fillStyle = INK;
-  const spots = [
-    [[-5, -3, 2], [4, 1, 2]],
-    [[0, -5, 2.5], [-3, 5, 2]],
-    [[5, -2, 2], [-4, 3, 1.8], [2, 8, 1.5]],
-    [[-3, -1, 2], [3, 4, 2.2]],
-  ][variant % 4];
-  spots.forEach(([x, y, r]) => {
-    g.beginPath();
-    g.arc(x, y, r, 0, 7);
-    g.fill();
-  });
-  g.restore();
 }
 
 function line(g, x1, y1, x2, y2) {
