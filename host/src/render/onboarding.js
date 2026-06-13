@@ -62,10 +62,21 @@ function drawChoose(g, candidates, sel) {
     const y = 194;
     const h = 64;
     const on = i === sel;
-    g.lineWidth = on ? 3 : 1;
-    g.strokeRect(x, y, bw, h);
+    if (on) {
+      g.fillStyle = INK;
+      g.fillRect(x, y, bw, h);
+      g.strokeStyle = PAPER;
+      g.fillStyle = PAPER;
+    } else {
+      g.strokeStyle = INK;
+      g.fillStyle = INK;
+      g.lineWidth = 1;
+      g.strokeRect(x, y, bw, h);
+    }
     drawEgg(g, candidate.species, x + bw / 2, y + 28, 0.42);
     px(g, "#" + (i + 1), x + bw / 2, y + 56, 12, "center", on ? 800 : 600);
+    g.strokeStyle = INK;
+    g.fillStyle = INK;
   });
   g.lineWidth = 2;
   px(g, "KEY 切换 · 长按确认", W / 2, H - 16, 12, "center", 600);

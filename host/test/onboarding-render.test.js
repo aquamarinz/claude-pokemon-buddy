@@ -40,3 +40,30 @@ test("hatch mid-frame egg differs per species (species-specific eggs)", async ()
   const eevee = await renderOnboarding({ kind: "hatch", frame: 0, species: "eevee" });
   assert.ok(!bulba.pngBuffer.equals(eevee.pngBuffer), "species eggs must differ even mid-hatch");
 });
+
+test("choose screen highlights selected chip distinctly (inverted)", async () => {
+  const sel0 = await renderOnboarding({ kind: "choose", candidates: CANDIDATES, sel: 0 });
+  const sel1 = await renderOnboarding({ kind: "choose", candidates: CANDIDATES, sel: 1 });
+  assert.ok(!sel0.pngBuffer.equals(sel1.pngBuffer), "different selection must render differently");
+
+  const bx = 24;
+  const bw = Math.round((400 - 48 - 18) / 4);
+  const y = 194;
+  const h = 64;
+  const selected = inkRatio(sel0.bitmap, bx, y, bw, h);
+  const unselected = inkRatio(sel0.bitmap, bx + bw + 6, y, bw, h);
+  assert.ok(selected > unselected + 0.25, `selected chip should be inverted (${selected} vs ${unselected})`);
+});
+
+function inkRatio(bitmap, x, y, w, h) {
+  const rowBytes = Math.ceil(bitmap.w / 8);
+  let ink = 0;
+  let total = 0;
+  for (let yy = y; yy < y + h; yy += 1) {
+    for (let xx = x; xx < x + w; xx += 1) {
+      ink += (bitmap.bytes[yy * rowBytes + (xx >> 3)] >> (7 - (xx & 7))) & 1;
+      total += 1;
+    }
+  }
+  return ink / total;
+}
