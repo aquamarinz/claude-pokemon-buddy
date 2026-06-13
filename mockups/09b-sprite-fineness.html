@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>09b · 宝可梦精细化 — 渲染方案对比</title>
+<style>
+  body{margin:0;background:#0e0f12;color:#c9ccbf;font-family:"Courier New",monospace;
+       display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;}
+  h1{font-size:15px;letter-spacing:1px;color:#9bbc0f;margin:0;}
+  h2{font-size:13px;color:#ece9d8;margin:10px 0 2px;}
+  img{image-rendering:pixelated;border:3px solid #3a4049;border-radius:6px;background:#fff;max-width:920px;width:100%;}
+  .hint{font-size:12px;color:#8d93a0;max-width:720px;text-align:center;line-height:1.7;}
+  .rec{color:#9bbc0f;font-weight:bold;}
+</style>
+</head>
+<body>
+  <h1>宝可梦精细化 · 1-bit 渲染方案对比</h1>
+
+  <h2>★ 最终方案：Dream World 矢量插画 → 目标分辨率直出 → 自动阈值线稿</h2>
+  <img src="compare3.png" alt="Dream World 线稿方案">
+  <div class="hint">
+    <span class="rec">扁平色块矢量源是质变点</span>：纯色填充存在干净的阈值把描边与填色完全分开，
+    立绘的渐变则切哪里都出毛边。矢量在 136px 直出 + 2x 超采样 = 平滑无锯齿。<br>
+    中列（自动阈值 +25 校准）为基准效果：眼睛/斑纹/耳廓细节全保留。
+    18 只中 17 只有 DW 源；仙子伊布（gen6 无 DW）用立绘管线兜底。
+    离线烘焙成品 1-bit PNG，运行时零改动，逐只过目后入库。
+  </div>
+
+  <h2>过程图：高清官方立绘 475px → 降到 136px → 二值化（已否决：仍偏粗糙）</h2>
+  <img src="compare2.png" alt="官方立绘方案对比">
+  <div class="hint">
+    列1 = 旧现状（40-56px 像素图硬阈值放大 3 倍）。列2 = 立绘 dither（偏灰）。
+    列3/4 = 立绘阈值 200/160——渐变源二值化毛边明显，被「太粗糙」否决，留档对比。
+  </div>
+
+  <h2>佐证图：为什么不是换"更大的像素源图"</h2>
+  <img src="compare.png" alt="像素源图对比">
+  <div class="hint">
+    gen5 黑白版画布虽是 96×96，但小型宝可梦的实际内容只有 ~37-50px（列3/4），
+    与金版同量级——像素时代源图没有"更细"的版本，这是物理上限，所以必须走高清立绘降采样。
+  </div>
+</body>
+</html>

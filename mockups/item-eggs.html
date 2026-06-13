@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>确认项 · 4 个差异化蛋设计</title>
+<style>
+  body{margin:0;background:#0e0f12;color:#c9ccbf;font-family:"Courier New",monospace;
+       display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;}
+  h1{font-size:16px;color:#9bbc0f;margin:0;}
+  .screen{image-rendering:pixelated;border:3px solid #3a4049;border-radius:6px;background:#fff;}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+  button{font-family:inherit;font-size:12px;background:#1b1e24;color:#ece9d8;border:1px solid #3a4049;border-radius:4px;padding:6px 12px;cursor:pointer;}
+  button.on{background:#3d4f1f;border-color:#9bbc0f;}
+  .hint{font-size:13px;color:#c9ccbf;max-width:640px;text-align:center;line-height:1.8;}
+</style>
+</head>
+<body>
+  <h1>4 个差异化蛋 · 一眼可辨 + 暗示物种</h1>
+  <canvas id="s" width="400" height="300" class="screen" style="width:600px;height:450px"></canvas>
+  <div class="bar">
+    <button onclick="show('row')" id="b0" class="on">四蛋并排</button>
+    <button onclick="show('choose')" id="b1">选蛋屏(KEY 切换)</button>
+    <button onclick="key()">KEY 切换候选</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+<script>
+const c=document.getElementById('s'), g=c.getContext('2d');
+const W=400,H=300,INK='#000',PAPER='#fff';
+g.imageSmoothingEnabled=false;
+const NAMES=['伊布','妙蛙种子','小火龙','杰尼龟'];
+
+function clear(){g.fillStyle=PAPER;g.fillRect(0,0,W,H);g.fillStyle=INK;g.strokeStyle=INK;}
+function box(){g.lineWidth=2;g.strokeRect(6,6,W-12,H-12);}
+function px(t,x,y,s,a='left',w=700){g.font=`${w} ${s}px "Courier New",monospace`;g.textAlign=a;g.textBaseline='alphabetic';g.fillText(t,x,y);}
+
+// ===== 4 个差异化蛋 (species, cx, cy, scale) =====
+function eggBase(cx,cy,sc,rx,ry){ g.save();g.translate(cx,cy);g.scale(sc,sc);g.lineWidth=3/sc;
+  g.beginPath();g.ellipse(0,0,rx,ry,0,0,Math.PI*2);g.stroke();g.restore(); }
+
+function eggEevee(cx,cy,sc=1){            // 标准椭圆 + 毛领锯齿带 + 散斑
+  eggBase(cx,cy,sc,34,44);
+  g.save();g.translate(cx,cy);g.scale(sc,sc);
+  // 毛领锯齿带 (中段水平 zigzag)
+  g.lineWidth=2.5/sc;g.beginPath();
+  let y0=2; for(let x=-32;x<=32;x+=8){ g.lineTo(x, y0 + (Math.floor((x+32)/8)%2?6:-6)); } g.stroke();
+  // 散斑
+  g.fillStyle=INK;[[-14,-16,5],[12,-20,4],[16,20,5]].forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  g.restore();
+}
+function eggBulba(cx,cy,sc=1){            // 顶部小芽+卷藤 + 大叶斑
+  eggBase(cx,cy,sc,33,44);
+  g.save();g.translate(cx,cy);g.scale(sc,sc);g.lineWidth=2.5/sc;
+  // 顶部小芽: 茎 + 两片叶 + 卷
+  g.beginPath();g.moveTo(0,-44);g.lineTo(0,-58);g.stroke();
+  g.beginPath();g.ellipse(-7,-60,7,4,-0.5,0,7);g.stroke();
+  g.beginPath();g.ellipse(8,-62,8,4.5,0.5,0,7);g.stroke();
+  g.beginPath();g.arc(0,-58,3,0,Math.PI);g.stroke();         // 卷
+  // 大叶斑 (不规则大块)
+  g.fillStyle=INK;
+  g.beginPath();g.ellipse(-10,-4,9,11,0.3,0,7);g.fill();
+  g.beginPath();g.ellipse(13,12,8,10,-0.2,0,7);g.fill();
+  g.beginPath();g.ellipse(-6,22,6,7,0,0,7);g.fill();
+  g.restore();
+}
+function eggChar(cx,cy,sc=1){             // 水滴尖顶 + 火苗三角纹 + 顶火簇
+  g.save();g.translate(cx,cy);g.scale(sc,sc);g.lineWidth=3/sc;
+  // 水滴形 (上尖下圆)
+  g.beginPath();
+  g.moveTo(0,-50); g.bezierCurveTo(26,-30,34,-6,34,6);
+  g.bezierCurveTo(34,32,18,46,0,46);
+  g.bezierCurveTo(-18,46,-34,32,-34,6);
+  g.bezierCurveTo(-34,-6,-26,-30,0,-50); g.stroke();
+  // 顶部火簇
+  g.fillStyle=INK;g.beginPath();g.moveTo(0,-54);g.lineTo(6,-44);g.lineTo(-6,-44);g.closePath();g.fill();
+  // 向上火苗三角纹
+  [[-12,12],[10,16],[0,28]].forEach(([x,y])=>{g.beginPath();g.moveTo(x,y);g.lineTo(x+5,y-12);g.lineTo(x-5,y-12);g.closePath();g.fill();});
+  g.restore();
+}
+function eggSquirt(cx,cy,sc=1){           // 矮圆 + 横龟壳分段带 + 波浪水纹
+  eggBase(cx,cy,sc,38,40);
+  g.save();g.translate(cx,cy);g.scale(sc,sc);g.lineWidth=2.5/sc;
+  // 横向分段带 (龟壳)
+  for(const y of [-12,6,22]){ g.beginPath();
+    const hw=Math.sqrt(Math.max(0,1-(y/40)**2))*38;
+    g.moveTo(-hw,y);g.lineTo(hw,y);g.stroke(); }
+  // 波浪水纹 (顶部)
+  g.beginPath();let on=true; for(let x=-22;x<=22;x+=6){ const yy=-26+(on?0:4); if(x===-22)g.moveTo(x,yy);else g.quadraticCurveTo(x-3,-26+(on?4:0),x,yy); on=!on; } g.stroke();
+  g.restore();
+}
+const EGGS=[eggEevee,eggBulba,eggChar,eggSquirt];
+
+let sel=0, mode='row';
+function drawRow(){
+  px('4 个蛋 · 形态各异',W/2,40,22,'center',800);
+  const xs=[70,170,270,355];
+  for(let i=0;i<4;i++){ EGGS[i](xs[i],150,0.92); px(NAMES[i],xs[i],244,13,'center',700); }
+  px('形状·顶部·花纹 三处区分,孵化前就能认出',W/2,278,12,'center',600);
+}
+function drawChoose(){
+  px('选择你的伙伴',W/2,36,24,'center',800);
+  EGGS[sel](W/2,108,1.05);                 // 中央放大当前蛋
+  px(NAMES[sel],W/2,182,24,'center',800);
+  const bx=24,bw=(W-48-18)/4;
+  for(let i=0;i<4;i++){ const x=bx+i*(bw+6),y=196,h=68,on=i===sel;
+    if(on){g.fillStyle=INK;g.fillRect(x,y,bw,h);}
+    g.lineWidth=on?3:1;g.strokeStyle=on?INK:INK;g.strokeRect(x,y,bw,h);
+    g.save(); if(on){ // 反色: 用 globalCompositeOperation 画白蛋
+      g.globalCompositeOperation='xor'; }
+    EGGS[i](x+bw/2,y+30,0.42);
+    g.restore();
+    g.fillStyle=on?PAPER:INK; g.font='800 12px "Courier New"';g.textAlign='center';
+    if(on){g.fillStyle=PAPER;} g.fillText('#'+(i+1),x+bw/2,y+60); g.fillStyle=INK;
+  }
+  px('KEY 切换 · 长按确认',W/2,H-14,12,'center',600);
+}
+function render(){ clear();box(); mode==='row'?drawRow():drawChoose();
+  document.getElementById('hint').textContent = mode==='row'
+    ? '伊布=毛领锯齿带+散斑 · 妙蛙种子=顶芽卷藤+大叶斑 · 小火龙=水滴尖顶+火苗纹+火簇 · 杰尼龟=矮圆+龟壳横带+水波纹'
+    : '中央放大显示当前选中蛋,KEY 循环切换。长按确认进孵化。';
+}
+function show(m){ mode=m; document.getElementById('b0').classList.toggle('on',m==='row'); document.getElementById('b1').classList.toggle('on',m==='choose'); render(); }
+function key(){ if(mode==='choose'){ sel=(sel+1)%4; render(); } }
+window.show=show;window.key=key;
+render();
+</script>
+</body>
+</html>

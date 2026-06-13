@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>蛋设计 · 官方 vs 同人 对比</title>
+<style>
+  body{margin:0;background:#0e0f12;color:#c9ccbf;font-family:"Courier New",monospace;
+       display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;}
+  h1{font-size:16px;color:#9bbc0f;margin:0;}
+  .screen{image-rendering:pixelated;border:3px solid #3a4049;border-radius:6px;background:#fff;}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+  button{font-family:inherit;font-size:12px;background:#1b1e24;color:#ece9d8;border:1px solid #3a4049;border-radius:4px;padding:6px 12px;cursor:pointer;}
+  button.on{background:#3d4f1f;border-color:#9bbc0f;}
+  .hint{font-size:13px;color:#c9ccbf;max-width:680px;text-align:center;line-height:1.8;}
+  .rec{color:#9bbc0f;font-weight:bold;}
+</style>
+</head>
+<body>
+  <h1>蛋设计 · 官方通用蛋 vs 同人物种蛋</h1>
+  <canvas id="s" width="400" height="300" class="screen" style="width:600px;height:450px"></canvas>
+  <div class="bar">
+    <button onclick="show(0)" id="b0" class="on">A 官方通用蛋+散斑区分</button>
+    <button onclick="show(1)" id="b1">B 我编的物种蛋</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+<script>
+const c=document.getElementById('s'),g=c.getContext('2d');
+const W=400,H=300,INK='#000',PAPER='#fff';g.imageSmoothingEnabled=false;
+const NAMES=['伊布','妙蛙种子','小火龙','杰尼龟'];
+function clear(){g.fillStyle=PAPER;g.fillRect(0,0,W,H);g.fillStyle=INK;g.strokeStyle=INK;}
+function box(){g.lineWidth=2;g.strokeRect(6,6,W-12,H-12);}
+function px(t,x,y,s,a='left',w=700){g.font=`${w} ${s}px "Courier New",monospace`;g.textAlign=a;g.textBaseline='alphabetic';g.fillText(t,x,y);}
+
+// ===== A: 官方通用蛋形 (锯齿横带 + 散斑) — 4 个只换斑点排布(GO 风) =====
+function officialEgg(cx,cy,sc,variant){
+  g.save();g.translate(cx,cy);g.scale(sc,sc);
+  // 蛋形: 上略尖下圆 (经典宝可梦蛋)
+  g.lineWidth=3/sc;g.beginPath();
+  g.moveTo(0,-46);g.bezierCurveTo(22,-40,34,-14,34,2);
+  g.bezierCurveTo(34,30,18,46,0,46);g.bezierCurveTo(-18,46,-34,30,-34,2);
+  g.bezierCurveTo(-34,-14,-22,-40,0,-46);g.stroke();
+  // 标志性锯齿横带 (中部)
+  g.lineWidth=2.5/sc;g.beginPath();
+  let first=true; for(let x=-32;x<=32;x+=8){ const y=4+(Math.floor((x+32)/8)%2?7:-7);
+    if(first){g.moveTo(-34,4);first=false;} g.lineTo(x,y);} g.lineTo(34,4); g.stroke();
+  // 散斑 (4 种排布, 只改这里 — GO 按距离换斑 同理)
+  g.fillStyle=INK;
+  const SPOTS=[
+    [[-16,-22,5],[14,-26,4],[20,24,5]],                 // 伊布
+    [[-14,-20,6],[16,-14,5],[-10,26,5],[18,28,4]],      // 妙蛙
+    [[0,-26,5],[-18,-10,4],[16,-8,4]],                  // 小火龙
+    [[-18,-18,4],[12,-22,5],[-8,24,5],[20,18,4],[2,30,3]],// 杰尼龟
+  ][variant];
+  SPOTS.forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  g.restore();
+}
+// ===== B: 我编的物种蛋 (复用 item-eggs 逻辑简版) =====
+function fanEgg(cx,cy,sc,v){
+  g.save();g.translate(cx,cy);g.scale(sc,sc);g.lineWidth=3/sc;
+  if(v===0){ g.beginPath();g.ellipse(0,0,34,44,0,0,7);g.stroke();
+    g.lineWidth=2.5/sc;g.beginPath();for(let x=-32;x<=32;x+=8)g.lineTo(x,2+(Math.floor((x+32)/8)%2?6:-6));g.stroke();
+    g.fillStyle=INK;[[-14,-16,5],[12,-20,4],[16,20,5]].forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();}); }
+  else if(v===1){ g.beginPath();g.ellipse(0,0,33,44,0,0,7);g.stroke();
+    g.lineWidth=2.5/sc;g.beginPath();g.moveTo(0,-44);g.lineTo(0,-58);g.stroke();
+    g.beginPath();g.ellipse(-7,-60,7,4,-0.5,0,7);g.stroke();g.beginPath();g.ellipse(8,-62,8,4.5,0.5,0,7);g.stroke();
+    g.fillStyle=INK;g.beginPath();g.ellipse(-10,-4,9,11,0.3,0,7);g.fill();g.beginPath();g.ellipse(13,12,8,10,-0.2,0,7);g.fill();g.beginPath();g.ellipse(-6,22,6,7,0,0,7);g.fill(); }
+  else if(v===2){ g.beginPath();g.moveTo(0,-50);g.bezierCurveTo(26,-30,34,-6,34,6);g.bezierCurveTo(34,32,18,46,0,46);g.bezierCurveTo(-18,46,-34,32,-34,6);g.bezierCurveTo(-34,-6,-26,-30,0,-50);g.stroke();
+    g.fillStyle=INK;g.beginPath();g.moveTo(0,-54);g.lineTo(6,-44);g.lineTo(-6,-44);g.closePath();g.fill();
+    [[-12,12],[10,16],[0,28]].forEach(([x,y])=>{g.beginPath();g.moveTo(x,y);g.lineTo(x+5,y-12);g.lineTo(x-5,y-12);g.closePath();g.fill();}); }
+  else { g.beginPath();g.ellipse(0,0,38,40,0,0,7);g.stroke();g.lineWidth=2.5/sc;
+    for(const y of[-12,6,22]){const hw=Math.sqrt(Math.max(0,1-(y/40)**2))*38;g.beginPath();g.moveTo(-hw,y);g.lineTo(hw,y);g.stroke();}
+    g.beginPath();let on=true;for(let x=-22;x<=22;x+=6){const yy=-26+(on?0:4);if(x===-22)g.moveTo(x,yy);else g.quadraticCurveTo(x-3,-26+(on?4:0),x,yy);on=!on;}g.stroke(); }
+  g.restore();
+}
+
+let view=0;
+function render(){ clear();box();
+  const title = view===0 ? 'A · 官方通用蛋 (同形,换斑点)' : 'B · 同人物种蛋 (各异形态)';
+  px(title,W/2,38,20,'center',800);
+  const xs=[70,170,270,355]; const fn = view===0?officialEgg:fanEgg;
+  for(let i=0;i<4;i++){ fn(xs[i],150,0.9,i); px(NAMES[i],xs[i],244,13,'center',700); }
+  document.getElementById('hint').textContent = view===0
+    ? '官方做法: 所有蛋同一个经典蛋形(锯齿横带),仅斑点排布不同(像 GO 按距离换斑)。canon 正确,但 4 个区别小,主要靠下方物种名识别。'
+    : '我编的: 蛋形/顶部/花纹都按物种特征改(芽/火/壳)。区分度最高、最像"那只宝可梦的蛋",但非官方设计、是同人发挥。';
+  document.getElementById('b0').classList.toggle('on',view===0);
+  document.getElementById('b1').classList.toggle('on',view===1);
+}
+function show(v){view=v;render();}
+window.show=show; render();
+</script>
+</body>
+</html>

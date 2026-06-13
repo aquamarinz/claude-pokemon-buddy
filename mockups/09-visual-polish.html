@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>09 · 视觉打磨 — P1+P2 九项 1-bit mockup</title>
+<style>
+  body{margin:0;background:#0e0f12;color:#c9ccbf;font-family:"Courier New",monospace;
+       display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;}
+  h1{font-size:15px;letter-spacing:1px;text-transform:uppercase;color:#9bbc0f;margin:0;}
+  .screen{image-rendering:pixelated;border:3px solid #3a4049;border-radius:6px;background:#fff;}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:680px;}
+  button{font-family:inherit;font-size:12px;background:#1b1e24;color:#ece9d8;border:1px solid #3a4049;
+         border-radius:4px;padding:6px 12px;cursor:pointer;}
+  button:hover{background:#272b33;}
+  button.on{background:#3d4f1f;border-color:#9bbc0f;}
+  .hint{font-size:12px;color:#8d93a0;max-width:620px;text-align:center;line-height:1.6;}
+  .step{color:#e23b2d;font-weight:bold;}
+</style>
+</head>
+<body>
+  <h1>视觉打磨 · 9 项 · 400×300 1-bit</h1>
+  <canvas id="s" width="400" height="300" class="screen" style="width:600px;height:450px"></canvas>
+  <div class="bar" id="nav"></div>
+  <div class="bar">
+    <button onclick="playAnim()" id="playBtn">▶ 播放动画（孵化/进化屏有效）</button>
+    <button onclick="key()">KEY（选蛋屏切换）</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+<script>
+const c = document.getElementById('s'), g = c.getContext('2d');
+const W=400, H=300, INK='#000', PAPER='#fff';
+g.imageSmoothingEnabled = false;
+
+// ===== 真 sprite (项目资产 base64, 加载后 threshold 成 1-bit) =====
+const SPRITES = { eevee:"iVBORw0KGgoAAAANSUhEUgAAAGEAAAB4CAYAAADi35zwAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAV3SURBVHic7V1LkuQqDLQn3v2v7Fn1C0YNSEKpDza5qYpuG4QSfUDYdV02PMb7D67r+mO49xAAgoWEg2Q85PMgGM/g+8EijjvaEHTmH0sIRk/hhwQAVt3RUX4CaDA+JACBCMyHECMkJJyU1BlSS7id5fg0NO7opKdO4Eg4ig6AxBI4V3QfsmyQuqOjZEfMSDiKDwJnCScrCsDZRS2A/7IF2ASta4Z7B+2KWfO/t+FuMkHouEckrHTyFULuxhogY0bFhLcH8NFaCGIZMxLerlgUbuuC9WRHOCwTcUiQQ+IZlog4JOggUbCaCBQJX8mMpFARgbSEE8h/Q0SElYSvKV4zXvG1JybIseJyRW7pkBCDKRGHBH+wbsmThDcdDHgA8W84flRlrbehRf3hrrVohMxTAkckaFgfzfiH2eDaiRBUFtgdM3Kx9tMBFfgm3x9C0FC4AkC4oR8M27EeeaHuhip89H2H9YXXxPjV7qol3M2nRal3xyoqYGTVLuA6oQryFip08JP+W6Bl+eXiqhX6acywQpvhjfoctQMhqBoJF0l3tYP0msm0Desk+ed+SUOZLkIyWKp4qZzS2sDoPhgJUkuomM1IzwJZAj5VuMuE5EhA5skruAcyzJSBzrJcCbiKxoQZIpV/RRBwMSSMrCDaOnp7UFQer36viJi4sljLdk8tdibgf9lnljDzw5HWMIsJaLT9hGWFkrOovcVTtDtq8SoCrg1TVM/gS/sIG3OPhKfjExGwDs6bgLRFqSZFtS56rINDToz02d+CS1F731cwKn9qgZKj116ay6UkeGY91M2t9LVSd+AWdunxTrtiRvnz1SIOd49msy9d+T9oSfAu5/WCoBYIF1ZF+cNd1JmAVYSfwbX44oUfEmbPY10gN2StJWufDSit+BatJfSE9qivotBzbzsQADltMTrMFYHR6Y6bfG6FlXpCxYFmF59MyDyV7eHqqp/o60JiCRFncVZkaOFVkPfCPzK1liBN7zQZzkgBK4qptPG3ClaW2QWIk9XWDUBpQpCZOHBgZZtdwBHkCSqXRMmVScBcNLnXY/CrE6MaEUOZuKKOpgPXYngHdHU8c5cVg/MUWv/vOeM0MWAmXwWrGMrQWydoZk1U/WEG7hqPUq0W0765M5zcSQdPArTtc/dkuSZzvxmmbOmzYtYE0WEkEda+qqWvcN15koFsuwoJ4jGt7KIifSuy5qvZSvHedVURLSWBqxNbno5BKuNuZmDW2kCtF43yUE/D9DIulMKkbXllSkjLHjbsAWT7URuKo/bcdBURyDKIQCYCJgIkP+diOSFRHah0uFf3FkNaWfMOchlBdGVyuewYVHhw8AlKG2f9axEuZ1TRJmtLIR0V3oFn8qcDlFDu1xGdIZlQwRKuKsrIQhUSkMjcsljCG0nQoARZ0h82erO7SB+b5qeA04V9K97ijs4EAeAhn5H3pxOotYTddlQlSA/O2e7o6Xz3erzW614ztCREBWjuWCP9W/pszgCCiNaPS49Y9q7N3ACEwPKaZqTL4OrXtHbrcWAgjURrTECclJOcJaWK752q2NYSrHiIW9HeI7lW+n+ES0ohEv1jd7NBaI+DSBTCvcFlCyBIaIsykljhmclsmSV5/OJgj4jIs0vb7XNF/LpUVB5/k+/bEGEhYaZcRLpobWMbIjwtIUoJ3GQoT0TE3lF2sCxPxCoJEX5e0scr9o1W33ckzfMR76x7PVbqCVEz7xNWcClJGA3ac3v5c1bBobc1Id2CRvfj9TBICumaU9k0y+jN9rY6Rv++8mD4SPle79HY0r1JCypZZ0M5Mj37LoVMdzCqxHHXhCLC/LxTWqkMPWzpflYgcQnpszETUdsWHAHXl2ZlNj4940f4CwM8vFHMeiaXAAAAAElFTkSuQmCC", espeon:"iVBORw0KGgoAAAANSUhEUgAAAHIAAAB4CAYAAAAuRqYbAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAUZSURBVHic7Z3butsoDEbJfPP+r+xeTNNhUw46I8laV9kpBsFvCRlw+ml2PN3nj2G7hRDPIGKb/F045iRWiSnIvwp1fgWq8BkYqJeVNzoGIs5sviycABGnBHROiZgAqIiFc3YilRcGoURMwEnEIgAlolOkVnYewErOTOha/bnAyuNWc+JTma0/oCGVmuiUmEbsvLExM9US0QhsSMXWXXuVAlCTHe5W1er63sMrERJk5i1Yj3mIiU95piDUREZqziwxBaB6nnS7JSYTC++DtltiErl9ZGO3wFBMuJW1Uvi2VYe7ENzeprodEVJwW0SIHZyyKfmHcI11SIM8g45h93XMRFmtqtxYbYGIt7ruDXPon3xh9MhIA7Dz0uwe+lfCN1vr9OKNfdsnTt55KhOBbT803v24wa6TkR9bepu3DhbBIxshREaeP0n2QbJW7x2fcUqSvK0S9bZAx/qH/ZCLvAhJGXjIgbDbcz+m/eU1n6GQx7DaQ/UiT8kQtr1TZt5aomTnxO5m/ADKSNnQBASc1kFZ2bkJZ6BP3vxRnDefTeY5K4u2AxJaPcIZcOy8SV1dmtV1KgthWl9UIZuBmJByu7LQ8cT0Y1lfZCGbsphYekEhYymahUcXsjkTs90QsQVMdmZoJkAUzEVsSYRsDsU0b+stz5E7LKYT9fAfcU7cIbm4LoXJHD7bWJY0xJpMNyaqL1nmyB7oAGQSPaWQzZlIFFtU9iOjshsMT0KPkGzz3CEO3o51sNZRIcw8MmrCM+6yexERAtve6KH1YXof5PDzrk0o6mEeuiDg8e6WWhvGbCw/Q/nGtEF9XD2H11vvYo7fQzzzGT6rHfqKtkRnsUMDOd9zYuat13aavHmlRttQ7+u/P3nWzHMpNojhSUhsu6vBxgzyScxZOS/Tzw+8GIUJZ7tBxc5R2nOxdpvHij0JDA1xfTls6MPYs/oO+3ijwk0xxzmJ0i5kMLFzpTYq7XrxQA4QL4TMqdD623ADcW5AUTyH2BMUb+PMp5LJT4lJeGCXaI/zN7ReNt7mkRWUtVMrG14n5kmMWRLEscHyUYMS2Y72UXcMKK/fQQfr9pvR3KOV2Hc9oIvwKst6mOUprrdYg1l+u2HDFI27rzfA4/YXlJOH9OUs3qv8cnwbi9rI7BW0yAL2fPs3844sffxDxPAJJWOflpSIDuCe2ckWSl9LqLsWQdZ+Tcnc2XB9o4bWcB3NDmeOrHkxAZk9MnPffpC9oyH7F/2VgeI3JWSRkpBhtRE8MmxHEYTsY4XW/9HejlKlhPwPrUPLBQLqoO/OnaYW0mvnuIeubh/rMEezY9aDBt0MTyumNFKb0thzrJjzpCHEhCY7Wod4+6OAlgP2yl/H0hJx92+cdy8kykld5wZrEWdlISfKLUJlSDG1Qp3kgGM99xk+U/oXTszbImqwe8zARokQSBuqMddpEMVOMFwjNZMVah0ajyeuxaTOG9wERAIpITHXuBGTs2j+FZDzy4aedxzG191WuBGzR9KLrAdA2iOt6hbH+uHbUkjt+q+LSTkhIBEKPYfUFZr/LSEbjJARB18a12K2S9tIEeq82Q6Km7sfVkS2HQxUyLeH1B734XVFSKM7LMK4izFyYYQimovwrk4Q3HqQ1oCzVBiaOteahJOQleQEQdsjd7+rViigObCWor32Buk9cjzTMn4njUbdNRUMqbT2zoT1DfJKT9V8PrIY0BLSkBrYAkR5ZWJSC5l5ZSe1cG/E1cK2Fr8A1eIt/YqqcCcAAAAASUVORK5CYII=", bulbasaur:"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" };
+const IMGS = {};
+let loaded = 0, total = Object.keys(SPRITES).length;
+for (const [k,b64] of Object.entries(SPRITES)) {
+  const im = new Image();
+  im.onload = () => { IMGS[k] = to1bit(im); if (++loaded === total) render(); };
+  im.src = "data:image/png;base64," + b64;
+}
+function to1bit(im){            // threshold 200, 同 host 管线
+  const cv=document.createElement('canvas'); cv.width=im.width; cv.height=im.height;
+  const cg=cv.getContext('2d'); cg.drawImage(im,0,0);
+  const d=cg.getImageData(0,0,cv.width,cv.height);
+  for(let i=0;i<d.data.length;i+=4){
+    const a=d.data[i+3]/255, l=(d.data[i]*.299+d.data[i+1]*.587+d.data[i+2]*.114)*a+255*(1-a);
+    const v=l<200?0:255; d.data[i]=d.data[i+1]=d.data[i+2]=v; d.data[i+3]=255;
+  }
+  cg.putImageData(d,0,0); return cv;
+}
+function silhouette(src){       // 进化交替用剪影: 非白全黑
+  const cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height;
+  const cg=cv.getContext('2d'); cg.drawImage(src,0,0);
+  const d=cg.getImageData(0,0,cv.width,cv.height);
+  for(let i=0;i<d.data.length;i+=4){ const v=d.data[i]<255?0:255; d.data[i]=d.data[i+1]=d.data[i+2]=v; }
+  cg.putImageData(d,0,0); return cv;
+}
+function blit(img,cx,cy,targetMax){ // 居中画 sprite, 最长边缩到 targetMax(整数倍, 保像素感)
+  const k=targetMax/Math.max(img.width,img.height);
+  const w=Math.round(img.width*k), h=Math.round(img.height*k);
+  g.imageSmoothingEnabled=false;
+  g.drawImage(img, Math.round(cx-w/2), Math.round(cy-h/2), w, h);
+}
+
+function clear(){ g.fillStyle=PAPER; g.fillRect(0,0,W,H); g.fillStyle=INK; g.strokeStyle=INK; }
+function frameBox(){ g.lineWidth=2; g.strokeRect(6,6,W-12,H-12); }
+function invert(){ const d=g.getImageData(0,0,W,H); for(let i=0;i<d.data.length;i+=4){d.data[i]=255-d.data[i];d.data[i+1]=255-d.data[i+1];d.data[i+2]=255-d.data[i+2];} g.putImageData(d,0,0); }
+function px(t,x,y,size,align='left',weight=700){ g.font=`${weight} ${size}px "Courier New",monospace`;
+  g.textAlign=align; g.textBaseline='alphabetic'; g.fillText(t,x,y); }
+
+// ===== 公共元素 =====
+function pokeball(cx,cy,r){
+  g.lineWidth=3; g.beginPath(); g.arc(cx,cy,r,0,7); g.stroke();
+  g.beginPath(); g.arc(cx,cy,r,Math.PI,Math.PI*2); g.fillStyle=INK; g.fill(); // 上半黑
+  g.fillStyle=PAPER; g.beginPath(); g.arc(cx,cy,r*0.32,0,7); g.fill();
+  g.fillStyle=INK; g.lineWidth=2.5; g.beginPath(); g.arc(cx,cy,r*0.32,0,7); g.stroke();
+  g.beginPath(); g.arc(cx,cy,r*0.13,0,7); g.fill();
+}
+function egg(cx,cy,scale=1,crack=0,shake=0,variant=0){
+  g.save(); g.translate(cx+shake, cy); g.scale(scale,scale); g.lineWidth=3;
+  g.beginPath(); g.ellipse(0,0,34,44,0,0,Math.PI*2); g.stroke();
+  g.fillStyle=INK;
+  const SPOT=[[[-12,-8,5],[10,2,6],[-4,18,4]],[[0,-14,6],[-9,8,5],[10,14,4]],
+              [[12,-6,5],[-10,4,4.5],[3,18,3.5],[-4,-16,3]],[[-7,-3,5],[8,8,5.5]]][variant%4];
+  SPOT.forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  if(crack>0){ g.lineWidth=2; g.beginPath();
+    g.moveTo(-20,-6); g.lineTo(-6,2); g.lineTo(-14,10); g.lineTo(2,16);
+    if(crack>1){ g.moveTo(6,-20); g.lineTo(12,-4); g.lineTo(4,4);
+                 g.moveTo(-2,-28); g.lineTo(6,-12); g.lineTo(-6,-2); } g.stroke(); }
+  g.restore();
+}
+function rays(cx,cy,r1,r2,n=12){ g.lineWidth=2;
+  for(let i=0;i<n;i++){ const a=i*Math.PI*2/n;
+    g.beginPath(); g.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+    g.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2); g.stroke(); } }
+function smallEgg(cx,cy,on,variant=0){
+  g.save(); g.translate(cx,cy);
+  if(on){ g.fillStyle=INK; g.fillRect(-22,-24,44,48); g.strokeStyle=PAPER; g.fillStyle=PAPER; }
+  g.lineWidth=on?2.5:1.5;
+  g.beginPath(); g.ellipse(0,0,13,17,0,0,Math.PI*2);
+  if(on){ g.fillStyle=PAPER; g.fill(); g.stroke(); g.fillStyle=INK; } else g.stroke();
+  g.fillStyle=on?INK:INK;
+  const spots=[[[-5,-3,2],[4,1,2]],[[0,-5,2.5],[-3,5,2]],[[5,-2,2],[-4,3,1.8],[2,8,1.5]],[[-3,-1,2],[3,4,2.2]]][variant%4];
+  spots.forEach(([x,y,r])=>{g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  g.restore(); g.strokeStyle=INK; g.fillStyle=INK;
+}
+function heart(cx,cy,s,fill){  // 大爱心 s≈7
+  g.save(); g.translate(cx,cy); g.lineWidth=1.5;
+  g.beginPath();
+  g.moveTo(0,s*0.6); g.bezierCurveTo(-s*1.4,-s*0.4,-s*0.55,-s*1.3,0,-s*0.35);
+  g.bezierCurveTo(s*0.55,-s*1.3,s*1.4,-s*0.4,0,s*0.6); g.closePath();
+  if(fill>=1){ g.fill(); } else if(fill>0){ g.save(); g.clip(); g.fillRect(-s*1.5,-s*1.5,s*1.5,s*3); g.restore(); g.stroke(); }
+  else g.stroke();
+  g.restore();
+}
+
+// ===== 各屏 =====
+let sel=0;
+function drawOak(){            // ⑤ 精灵球锚 + 文字垂直居中 + 页码点
+  px('大木博士',20,30,12,'left',800);
+  g.lineWidth=1; g.beginPath(); g.moveTo(20,38); g.lineTo(W-20,38); g.stroke();
+  pokeball(W/2,86,26);
+  const OAK=["……这个世界，","生活着被称为「宝可梦」的","神奇生物。","今天，一颗蛋交到了你手上。"];
+  OAK.forEach((t,i)=>px(t,W/2,148+i*30,18,'center',700));   // 居中块
+  for(let i=0;i<4;i++){ g.beginPath(); g.arc(W/2-27+i*18,H-24,4,0,7);
+    if(i===3) g.fill(); else g.stroke(); }                   // 页码点,当前页(p4)实心
+  px('▶ KEY',W-26,H-20,12,'right',700);
+}
+function drawChoose(){         // ④ 中央蛋联动花纹 + 选中 chip 反色
+  px('选择你的伙伴',W/2,36,24,'center',800);
+  egg(W/2,112,1.0,0,0,sel);                                  // ← 花纹跟随 sel
+  const NAMES=['伊布','妙蛙种子','小火龙','杰尼龟'];
+  px(NAMES[sel],W/2,178,24,'center',800);
+  const bx=24, bw=(W-48-18)/4;
+  for(let i=0;i<4;i++){ const x=bx+i*(bw+6), y=194, h=64, on=i===sel;
+    if(on){ g.fillStyle=INK; g.fillRect(x,y,bw,h); }          // 反色底
+    g.lineWidth=on?3:1; g.strokeRect(x,y,bw,h);
+    g.save();
+    if(on){ g.strokeStyle=PAPER; g.fillStyle=PAPER; }
+    g.lineWidth=on?2.5:1.5; g.beginPath(); g.ellipse(x+bw/2,y+28,13,17,0,0,7); g.stroke();
+    const spots=[[[-5,-3,2],[4,1,2]],[[0,-5,2.5],[-3,5,2]],[[5,-2,2],[-4,3,1.8]],[[-3,-1,2],[3,4,2.2]]][i];
+    spots.forEach(([sx,sy,sr])=>{g.beginPath();g.arc(x+bw/2+sx,y+28+sy,sr,0,7);g.fill();});
+    g.font='800 12px "Courier New"'; g.textAlign='center'; g.fillText('#'+(i+1),x+bw/2,y+56);
+    g.restore(); g.strokeStyle=INK; g.fillStyle=INK;
+  }
+  px('KEY 切换 · 长按确认',W/2,H-16,12,'center',600);
+}
+// ③ 孵化 12 帧: 静→摇渐强→裂纹→闪白×2→(转 born)
+const HATCH=[
+  ()=>{egg(W/2,150,1.4,0,0,1);},
+  ()=>{egg(W/2,150,1.4,0,-3,1);}, ()=>{egg(W/2,150,1.4,0,3,1);},
+  ()=>{egg(W/2,150,1.4,0,-6,1);}, ()=>{egg(W/2,150,1.4,0,6,1);},
+  ()=>{egg(W/2,150,1.4,1,-8,1);}, ()=>{egg(W/2,150,1.4,1,8,1);},
+  ()=>{egg(W/2,150,1.4,2,-5,1); shard(-58,118); shard(60,130);},
+  ()=>{egg(W/2,150,1.45,2,5,1); shard(-66,108); shard(70,122); shard(-40,190);},
+  'FLASH','FLASH',
+  ()=>{ if(IMGS.bulbasaur){ rays(W/2,140,82,108,12); blit(IMGS.bulbasaur,W/2,140,130); } px('诞生!',W/2,44,24,'center',800); }
+];
+function shard(dx,dy){ g.save(); g.translate(W/2+dx,dy); g.lineWidth=2;
+  g.beginPath(); g.moveTo(0,0); g.lineTo(6,-8); g.lineTo(10,2); g.closePath(); g.stroke(); g.restore(); }
+let hatchF=11;
+function drawHatch(f){
+  const step=HATCH[Math.min(f,HATCH.length-1)];
+  if(step==='FLASH'){ g.fillStyle=INK; g.fillRect(0,0,W,H); return; }
+  px('孵化中…',W/2,40,24,'center',800); step();
+  if(f<9) px('…',W/2,H-18,14,'center',700);
+}
+// ① 进化: GB 闪白交替 (eevee→espeon)
+const EVO=['FLASH','FLASH','A','B','A','B','A','B','A','B','FLASH','FLASH','REVEAL'];
+let evoF=12;
+function drawEvo(f){
+  const step=EVO[Math.min(f,EVO.length-1)];
+  if(step==='FLASH'){ g.fillStyle=INK; g.fillRect(0,0,W,H); return; }
+  if(step==='A'||step==='B'){
+    px('咦？！',W/2,44,24,'center',800);
+    const im=step==='A'?IMGS.eevee:IMGS.espeon;
+    if(im) blit(silhouette(im),W/2,150,3);                    // 剪影交替
+    return;
+  }
+  // REVEAL
+  if(IMGS.espeon){ rays(W/2,140,86,112,12); blit(IMGS.espeon,W/2,140,130); }
+  px('✦ 伊布 进化成了 太阳伊布！ ✦',W/2,236,18,'center',800);
+  px('▶ KEY',W-26,H-22,12,'right',700);
+}
+function drawBorn(){           // ⑦ 放射线 + ✦ 庆祝
+  if(IMGS.bulbasaur){ rays(W/2,96,82,106,12); blit(IMGS.bulbasaur,W/2,96,130); }
+  px('✦ 妙蛙种子 诞生了！ ✦',W/2,200,24,'center',800);
+  px('默认名 妙蛙种子 · 想改名去 dashboard',W/2,228,12,'center',600);
+  px('▶ KEY 开始养成',W/2,H-22,12,'center',700);
+}
+function drawDaily(ready){     // ⑥ 物种名 ⑧ 5大爱心 ② 可进化徽章
+  g.lineWidth=1; g.beginPath(); g.moveTo(216,6); g.lineTo(216,H-6); g.stroke();
+  // 左面板示意(不在本次改动范围,画简版)
+  px('CLAUDE',16,28,12,'left',800); px('14:00',204,28,11,'right',600);
+  px('12%',16,64,30,'left',800); px('5H',204,52,10,'right',600);
+  g.strokeRect(16,76,150,8); g.fillRect(16,76,18,8);
+  px('WEEK',16,104,10,'left',600); g.strokeRect(50,96,116,8); g.fillRect(50,96,40,8);
+  px('today $1.00 · 0 tok',16,126,11,'left',600);
+  px('☁ 多云 12°',16,152,14,'left',700);
+  px('室内 21.0°C · 45%',16,260,10,'left',600);
+  px('室外 12.0°C · 50%',16,276,10,'left',600);
+  // 右 buddy 面板
+  const cx=308;
+  if(IMGS.eevee) blit(IMGS.eevee,cx,104,104);
+  g.fillStyle='#000';
+  px('Bui!',376,30,12,'right',700); g.strokeRect(346,16,44,20);  // 气泡示意
+  px('伊布',cx,184,14,'center',800);                           // ⑥ 物种名
+  px('■ 开心',236,210,12,'left',600);
+  px('Lv.5',236,238,18,'left',800); px('🔥0天',390,238,13,'right',600);
+  g.strokeRect(236,248,154,7); g.fillRect(236,248,62,7);
+  for(let i=0;i<5;i++) heart(248+i*26,278,7,i<1?1:(i===1?0.5:0)); // ⑧ 5大心(半心)
+  if(ready){                                                   // ② 可进化徽章(反色)
+    g.fillStyle=INK; g.fillRect(236,190,154,16);
+    g.fillStyle=PAPER; g.font='800 12px "Courier New"'; g.textAlign='center';
+    g.fillText('▲ 按 KEY 进化！',313,202); g.fillStyle=INK;
+  }
+}
+
+// ===== 导航 =====
+const SCENES=[
+  {n:'① 进化(播放)', d:'GB 名场面：闪黑×2 → 新旧剪影加速交替×8 → 闪黑×2 → 放射线揭晓 + 「✦ 伊布 进化成了 太阳伊布！✦」。整段约 2.5s,定格等 KEY。音效 EVOLVE 在第一次闪黑时播。', f:()=>drawEvo(evoF)},
+  {n:'② 日常·可进化', d:'readyToEvolve 时物种名位置换成反色徽章「▲ 按 KEY 进化！」——不再盲按。', f:()=>drawDaily(true)},
+  {n:'③ 孵化(播放)', d:'6→12 帧：静止→摇晃渐强(±3→±8)→裂纹两段+碎片飞出→闪黑×2→放射线「诞生!」(随后进 born 屏)。EVOLVE 音在闪黑时播,删掉「♪ 孵化音」文字。', f:()=>drawHatch(hatchF)},
+  {n:'④ 选蛋', d:'中央大蛋花纹跟随所选候选(4 套 spot 花纹);选中 chip 整块反色——1-bit 下最强选中态。按 KEY 试试。', f:drawChoose},
+  {n:'⑤ 大木屏', d:'精灵球视觉锚 + 开场白整块垂直居中 + 底部页码点(●○○○)。大木剪影手绘风险高,精灵球几何图形 1-bit 渲染零翻车。', f:drawOak},
+  {n:'⑥⑧ 日常·平时', d:'sprite 下方加物种中文名(进化后才知道自己是谁);爱心 10 小→5 大(带半心,bond granularity 不变);streak 配火焰图标。', f:()=>drawDaily(false)},
+  {n:'⑦ 诞生', d:'sprite 背后 12 条放射线 + 标题两侧 ✦;「默认名」行并入改名提示。', f:drawBorn},
+];
+let scene=0;
+const nav=document.getElementById('nav');
+SCENES.forEach((s,i)=>{ const b=document.createElement('button'); b.textContent=s.n;
+  b.onclick=()=>{scene=i; evoF=12; hatchF=11; render();}; nav.appendChild(b); });
+
+function render(){
+  clear(); frameBox();
+  SCENES[scene].f();
+  document.getElementById('hint').innerHTML='<span class="step">'+SCENES[scene].n+'</span> '+SCENES[scene].d;
+  [...nav.children].forEach((b,i)=>b.classList.toggle('on',i===scene));
+}
+function key(){ if(scene===3){ sel=(sel+1)%4; render(); } }
+let timer=null;
+function playAnim(){
+  if(timer){ clearInterval(timer); timer=null; }
+  if(scene===0){ evoF=0; const SP=[420,420,220,220,180,180,140,140,110,110,420,420,0];
+    const tick=()=>{ render(); if(evoF>=EVO.length-1) return; evoF++; setTimeout(tick,SP[evoF]??200); }; tick(); }
+  if(scene===2){ hatchF=0; const tick=()=>{ render(); if(hatchF>=HATCH.length-1) return; hatchF++; setTimeout(tick,hatchF>=9?160:230); }; tick(); }
+}
+window.key=key; window.playAnim=playAnim;
+render();
+</script>
+</body>
+</html>
