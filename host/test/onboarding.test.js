@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runOnboarding } from "../src/pet/onboarding.js";
 import { OAK_LINES, CANDIDATES } from "../src/pet/onboarding-data.js";
+import { renderOnboarding } from "../src/render/onboarding.js";
 import { SOUND } from "../src/transport/proto.js";
 
 function mockIo(buttons) {
@@ -71,4 +72,22 @@ test("hatch plays EVOLVE sound right after the first black-flash frame", async (
 
   assert.ok(blackIndex >= 0, "hatch sequence must push a black flash frame");
   assert.deepEqual(soundIndexes, [blackIndex + 1], "EVOLVE must play immediately after first black flash");
+});
+
+test("runOnboarding passes {page,total} to each oak scene", async () => {
+  const oak = OAK_LINES.map(() => ({ key: "KEY", kind: "short" }));
+  const buttons = [...oak, { key: "KEY", kind: "long" }, { key: "KEY", kind: "short" }];
+  const { io } = mockIo(buttons);
+  const scenes = [];
+
+  await runOnboarding(io, {
+    render: async (scene) => {
+      scenes.push(scene);
+      return renderOnboarding(scene);
+    },
+  });
+
+  const oakScenes = scenes.filter((scene) => scene.kind === "oak");
+  assert.equal(oakScenes.length, OAK_LINES.length);
+  assert.ok(oakScenes.every((scene, i) => scene.page === i + 1 && scene.total === OAK_LINES.length));
 });

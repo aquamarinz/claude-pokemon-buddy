@@ -3,7 +3,7 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import { H, INK, PAPER, W } from "./palette.js";
 import { imageDataToFrame } from "./frame.js";
 import { ZPIX_FONT_PATH, drawSprite } from "./layout.js";
-import { loadBuddySprite } from "./sprites.js";
+import { loadBuddySprite, loadOakSprite } from "./sprites.js";
 
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
 const MONO = '"Zpix"';
@@ -28,7 +28,7 @@ export async function renderOnboarding(scene) {
   g.lineWidth = 2;
   g.strokeRect(6, 6, W - 12, H - 12);
 
-  if (scene.kind === "oak") drawOak(g, scene.lines ?? []);
+  if (scene.kind === "oak") await drawOak(g, scene.lines ?? [], scene.page, scene.total);
   else if (scene.kind === "choose") drawChoose(g, scene.candidates ?? [], scene.sel ?? 0);
   else if (scene.kind === "hatch") await drawHatch(g, scene.frame ?? 0, scene.species);
   else if (scene.kind === "born") {
@@ -39,13 +39,31 @@ export async function renderOnboarding(scene) {
   return imageDataToFrame(g.getImageData(0, 0, W, H));
 }
 
-function drawOak(g, lines) {
-  px(g, "大木博士", 20, 30, 12, "left", 800);
+async function drawOak(g, lines, page = 1, total = lines.length || 1) {
+  px(g, "大木博士", W / 2, 30, 12, "center", 800);
   g.lineWidth = 1;
   line(g, 20, 38, W - 20, 38);
   g.lineWidth = 2;
-  lines.forEach((text, i) => px(g, text, 28, 84 + i * 34, 18, "left", 700));
+  const oak = await loadOakSprite();
+  drawSprite(g, oak.gray, { x: W / 2 - 63, y: 46, maxSize: 126, srcW: oak.w, srcH: oak.h, scale: 2 });
+  lines.forEach((text, i) => px(g, text, W / 2, 196 + i * 24, 17, "center", 700));
+  drawPageDots(g, page, total, W / 2, H - 40);
   px(g, "▶ KEY", W - 26, H - 22, 12, "right", 700);
+}
+
+function drawPageDots(g, page, total, cx, y) {
+  const count = Math.max(1, Number(total) || 1);
+  const current = Math.max(1, Math.min(count, Number(page) || 1));
+  const gap = 14;
+  const start = cx - ((count - 1) * gap) / 2;
+  g.lineWidth = 1;
+  for (let i = 0; i < count; i += 1) {
+    g.beginPath();
+    g.arc(start + i * gap, y, 3, 0, Math.PI * 2);
+    if (i + 1 === current) g.fill();
+    else g.stroke();
+  }
+  g.lineWidth = 2;
 }
 
 function drawChoose(g, candidates, sel) {

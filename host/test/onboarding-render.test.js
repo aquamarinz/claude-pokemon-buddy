@@ -55,6 +55,13 @@ test("choose screen highlights selected chip distinctly (inverted)", async () =>
   assert.ok(selected > unselected + 0.25, `selected chip should be inverted (${selected} vs ${unselected})`);
 });
 
+test("oak screen page dots reflect current page", async () => {
+  const lines = ["a", "b", "c", "d"];
+  const p1 = await renderOnboarding({ kind: "oak", lines, page: 1, total: 4 });
+  const p4 = await renderOnboarding({ kind: "oak", lines, page: 4, total: 4 });
+  assert.ok(!p1.pngBuffer.equals(p4.pngBuffer), "different page must render different dots");
+});
+
 function inkRatio(bitmap, x, y, w, h) {
   const rowBytes = Math.ceil(bitmap.w / 8);
   let ink = 0;
