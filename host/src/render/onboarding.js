@@ -12,9 +12,13 @@ const HATCH_FRAMES = 12;
 
 function px(g, t, x, y, size, align = "left", weight = 700) {
   g.font = `${weight} ${size}px ${MONO}`;
-  g.textAlign = align;
   g.textBaseline = "alphabetic";
-  g.fillText(t, x, y);
+  // Zpix 点阵字过 1-bit 阈值时, 左边缘必须落在整数像素, 否则 center/right 的半像素错位→抗锯齿→碎裂。
+  // 自己算左边缘并 round, 用 left 对齐画。
+  g.textAlign = "left";
+  const width = align === "left" ? 0 : g.measureText(t).width;
+  const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
+  g.fillText(t, Math.round(left), Math.round(y));
 }
 
 export async function renderOnboarding(scene) {

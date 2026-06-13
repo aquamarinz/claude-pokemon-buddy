@@ -98,9 +98,12 @@ function rays(g, cx, cy, inner, outer, count) {
 
 function px(g, t, x, y, size, align = "left", weight = 700) {
   g.font = `${weight} ${size}px ${MONO}`;
-  g.textAlign = align;
   g.textBaseline = "alphabetic";
-  g.fillText(t, x, y);
+  // Zpix 过 1-bit 阈值需左边缘落整数像素 (center/right 半像素错位会碎裂)
+  g.textAlign = "left";
+  const width = align === "left" ? 0 : g.measureText(t).width;
+  const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
+  g.fillText(t, Math.round(left), Math.round(y));
 }
 
 function line(g, x1, y1, x2, y2) {

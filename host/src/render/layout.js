@@ -158,18 +158,17 @@ function drawBuddyPanel(g, model) {
 function drawSpeciesLine(g, panelX, panelW, buddy) {
   const cx = panelX + panelW / 2;
   g.font = `800 12px ${CJK}`;
-  g.textAlign = "center";
+  g.textAlign = "left"; // Zpix 12px 过 1-bit 需整数左边缘, 自算 center 再 round (避免半像素碎裂)
+  const centered = (t) => g.fillText(t, Math.round(cx - g.measureText(t).width / 2), 198);
   if (buddy.readyToEvolve) {
-    const x = panelX + 18;
     g.fillStyle = INK;
-    g.fillRect(x, 184, panelW - 36, 18);
+    g.fillRect(panelX + 18, 184, panelW - 36, 18);
     g.fillStyle = PAPER;
-    g.fillText("▲ 按 KEY 进化！", cx, 198);
+    centered("▲ 按 KEY 进化！");
   } else {
     g.fillStyle = INK;
-    g.fillText(zhName(buddy.species ?? "eevee"), cx, 198);
+    centered(zhName(buddy.species ?? "eevee"));
   }
-  g.textAlign = "left";
   g.fillStyle = INK;
 }
 
