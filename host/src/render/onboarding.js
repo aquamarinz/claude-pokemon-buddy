@@ -45,10 +45,10 @@ async function drawOak(g, lines, page = 1, total = lines.length || 1) {
   line(g, 20, 38, W - 20, 38);
   g.lineWidth = 2;
   const oak = await loadOakSprite();
-  drawSprite(g, oak.gray, { x: W / 2 - 63, y: 46, maxSize: 126, srcW: oak.w, srcH: oak.h, scale: 2 });
-  lines.forEach((text, i) => px(g, text, W / 2, 196 + i * 24, 17, "center", 700));
-  drawPageDots(g, page, total, W / 2, H - 40);
-  px(g, "▶ KEY", W - 26, H - 22, 12, "right", 700);
+  drawSprite(g, oak.gray, { x: W / 2 - 63, y: 42, maxSize: 126, srcW: oak.w, srcH: oak.h, scale: 2 });
+  lines.forEach((text, i) => px(g, text, W / 2, 190 + i * 27, 24, "center", 700)); // 24px=Zpix整数倍, 清晰
+  drawPageDots(g, page, total, W / 2 - 70, H - 14);
+  px(g, "▶ KEY", W - 26, H - 14, 12, "right", 700);
 }
 
 function drawPageDots(g, page, total, cx, y) {
