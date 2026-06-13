@@ -15,7 +15,7 @@
 
 ## 已完成（基线，commit d050030）
 
-**项① sprite 全 18 只换 Dream World 矢量线稿**——已 merge。烘焙管线（定稿，需固化为 `host/scripts/bake-sprites.mjs` 入库可复现）：
+**项① sprite 全 18 只换 Dream World 矢量线稿**——已 merge。烘焙管线（定稿，需固化为 `host/scripts/bake-assets.mjs` 入库可复现）：
 
 ```
 PokeAPI Dream World SVG (扁平色块矢量)
@@ -46,7 +46,7 @@ PokeAPI Dream World SVG (扁平色块矢量)
 
 ### 项 A — Oak 立绘资产 + 大木开场屏（`render/onboarding.js` drawOak）
 
-**资产**：FRLG 官方 Oak 立绘（`Spr_FRLG_Oak.png`，源 Bulbapedia archives）→ threshold 175 → bbox 裁剪 → 1-bit PNG 存 `host/seed/oak.png`（40×63）。烘焙逻辑并入 `bake-sprites.mjs`（或独立 `bake-oak.mjs`），URL + 阈值写死可复现。
+**资产**：FRLG 官方 Oak 立绘（`Spr_FRLG_Oak.png`，源 Bulbapedia archives）→ threshold 175 → bbox 裁剪 → 1-bit PNG 存 `host/seed/oak.png`（40×63）。烘焙逻辑**并入唯一脚本 `host/scripts/bake-assets.mjs`**（同一脚本烘焙 18 sprite + Oak，不另开 bake-oak.mjs），URL + 阈值写死可复现。
 
 **drawOak 改动**：
 - 顶部标题「大木博士」12px（已是中文，保留）+ 下划线。
@@ -172,7 +172,7 @@ PokeAPI Dream World SVG (扁平色块矢量)
 经真实管线离线渲染并人工确认：
 1. onboarding 全流程：大木(Oak立绘+页码) → 选蛋(4蛋+联动+反色) → 孵化逐帧(抖/裂/闪黑) → 诞生(放射线+✦)。
 2. 日常屏 × 全 18 物种（物种名 + 半心 + 火焰）+ readyToEvolve 态徽章。
-3. 进化动画逐帧（闪黑/剪影交替/揭晓）至少 1 条进化线（如 eevee→espeon）。
+3. 进化动画逐帧（闪黑/双 sprite 交替/揭晓）至少 1 条进化线（如 eevee→espeon）。
 
 ## 风险
 
