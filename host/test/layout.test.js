@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createCanvas } from "@napi-rs/canvas";
 
-import { fitTodayLineFont, formatReset, layoutText, weatherIconKind } from "../src/render/layout.js";
+import { fitTodayLineFont, formatReset, heartCount, layoutText, weatherIconKind } from "../src/render/layout.js";
 import { LEFT_W } from "../src/render/palette.js";
 
 test("layout text includes wind in the weather detail row", () => {
@@ -78,6 +78,14 @@ test("weather icon kind follows the current condition", () => {
   assert.equal(weatherIconKind({ cond: "雨" }), "rain");
   assert.equal(weatherIconKind({ cond: "雪" }), "snow");
   assert.equal(weatherIconKind({ cond: "雾" }), "fog");
+});
+
+test("heartCount maps raw bond to 0-5 in half-heart steps", () => {
+  assert.equal(heartCount(0), 0);
+  assert.equal(heartCount(40), 1);
+  assert.equal(heartCount(60), 1.5);
+  assert.equal(heartCount(200), 5);
+  assert.equal(heartCount(9999), 5);
 });
 
 test("layout draws hearts without platform heart glyphs", () => {

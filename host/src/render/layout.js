@@ -350,11 +350,35 @@ function drawFlame(g, x, y) {
 
 function drawHearts(g, x, y, filled) {
   for (let i = 0; i < 5; i += 1) {
-    drawHeart(g, x + i * 20, y, i < filled);
+    drawHeart(g, x + i * 20, y, Math.max(0, Math.min(1, filled - i)));
   }
 }
 
-function drawHeart(g, x, y, filled) {
+function drawHeart(g, x, y, fill) {
+  heartPath(g, x, y);
+
+  if (fill >= 1) {
+    g.fillStyle = INK;
+    g.fill();
+    return;
+  }
+
+  if (fill > 0) {
+    g.save();
+    g.clip();
+    g.fillStyle = INK;
+    g.fillRect(x, y, Math.round(8 * fill), 14);
+    g.restore();
+  }
+
+  heartPath(g, x, y);
+  g.strokeStyle = INK;
+  g.lineWidth = 1;
+  g.stroke();
+  g.lineWidth = 2;
+}
+
+function heartPath(g, x, y) {
   g.beginPath();
   g.moveTo(x + 5, y + 10);
   g.bezierCurveTo(x, y + 6, x, y + 1, x + 4, y + 1);
@@ -363,16 +387,6 @@ function drawHeart(g, x, y, filled) {
   g.bezierCurveTo(x + 16, y + 1, x + 16, y + 6, x + 11, y + 10);
   g.lineTo(x + 8, y + 13);
   g.closePath();
-
-  if (filled) {
-    g.fillStyle = INK;
-    g.fill();
-  } else {
-    g.strokeStyle = INK;
-    g.lineWidth = 1;
-    g.stroke();
-    g.lineWidth = 2;
-  }
 }
 
 function roundedRect(g, x, y, w, h, r) {
@@ -396,8 +410,9 @@ function line(g, x1, y1, x2, y2) {
   g.stroke();
 }
 
-function heartCount(bond) {
-  return Math.max(0, Math.min(5, Math.round(Number(bond) || 0)));
+export function heartCount(rawBond) {
+  const v = Math.round(((Number(rawBond) || 0) / 40) * 2) / 2;
+  return Math.max(0, Math.min(5, v));
 }
 
 function tempHum(v) {
