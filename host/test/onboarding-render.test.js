@@ -62,6 +62,16 @@ test("oak screen page dots reflect current page", async () => {
   assert.ok(!p1.pngBuffer.equals(p4.pngBuffer), "different page must render different dots");
 });
 
+test("born screen renders rays + sparkle title for the species", async () => {
+  const born = await renderOnboarding({ kind: "born", species: "bulbasaur", name: "妙蛙种子" });
+  assert.ok(born.pngBuffer.length > 0);
+  const sideRays = inkRatio(born.bitmap, 88, 72, 36, 56) + inkRatio(born.bitmap, 276, 72, 36, 56);
+  assert.ok(sideRays > 0.02, "born screen should add visible side rays behind the sprite");
+
+  const eevee = await renderOnboarding({ kind: "born", species: "eevee", name: "伊布" });
+  assert.ok(!born.pngBuffer.equals(eevee.pngBuffer), "different species born differ");
+});
+
 function inkRatio(bitmap, x, y, w, h) {
   const rowBytes = Math.ceil(bitmap.w / 8);
   let ink = 0;
