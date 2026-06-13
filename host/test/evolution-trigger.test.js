@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runOneTick } from "../src/index.js";
@@ -37,6 +37,7 @@ test("night RTC plus KEY evolves ready Eevee to Umbreon", async () => {
     framePath,
     now: new Date(2026, 4, 30, 21),
     mock: mockPressingKey(framePath),
+    evolutionDelay: async () => {},
   });
 
   assert.equal(state.species, "umbreon");
@@ -79,6 +80,7 @@ test("stone overrides RTC branch when KEY triggers evolution", async () => {
     framePath,
     now: new Date(2026, 4, 30, 10),
     mock: mockPressingKey(framePath),
+    evolutionDelay: async () => {},
   });
 
   assert.equal(state.species, "flareon");
@@ -116,6 +118,7 @@ test("KEY evolves a level-ready Bulbasaur to Ivysaur", async () => {
     framePath,
     now: new Date(2026, 4, 30, 10),
     mock: mockPressingKey(framePath),
+    evolutionDelay: async () => {},
   });
 
   assert.equal(state.species, "ivysaur");
@@ -154,10 +157,39 @@ test("KEY evolves a level-30 Ivysaur to Venusaur", async () => {
     framePath,
     now: new Date(2026, 4, 30, 10),
     mock: mockPressingKey(framePath),
+    evolutionDelay: async () => {},
   });
 
   assert.equal(state.species, "venusaur");
   assert.equal(state.readyToEvolve, false);
+});
+
+test("KEY evolution saves evolved state and pushes the animation", async () => {
+  const statePath = join("out", "test-evo-anim-state.json");
+  const framePath = join("out", "test-evo-anim-frame.png");
+  writeState(statePath, { species: "eevee", bond: 160, readyToEvolve: true });
+  const mock = mockPressingKey(framePath);
+  const origPush = mock.push.bind(mock);
+  let pushes = 0;
+  mock.push = async (frame) => {
+    pushes += 1;
+    return origPush(frame);
+  };
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 21),
+    mock,
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "umbreon");
+  const persisted = JSON.parse(readFileSync(statePath, "utf8"));
+  assert.equal(persisted.species, "umbreon");
+  assert.ok(pushes > 1, "animation frames plus final daily frame must be pushed");
 });
 
 function writeState(statePath, overrides) {

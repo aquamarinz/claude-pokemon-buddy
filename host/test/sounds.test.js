@@ -48,6 +48,7 @@ test("evolution plays the EVOLVE sound", async () => {
 
   const pet = await runOneTick({
     usage: USAGE, weather: WEATHER, statePath, framePath, transport, today: "2026-06-09",
+    evolutionDelay: async () => {},
   });
 
   assert.equal(pet.species, "jolteon", "thunder stone evolves eevee -> jolteon");

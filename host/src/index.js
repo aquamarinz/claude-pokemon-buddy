@@ -9,6 +9,7 @@ import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
 import { runOnboarding } from "./pet/onboarding.js";
+import { playEvolutionAnimation } from "./render/evolution-anim.js";
 import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
@@ -58,6 +59,7 @@ export async function runOneTick({
   transport,
   transportFactory = createTransport,
   personalityRng = Math.random,
+  evolutionDelay,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
@@ -89,13 +91,21 @@ export async function runOneTick({
   const readyToEvolve = Boolean(evolution.auto || evolution.candidates.length > 0);
   pet = { ...pet, readyToEvolve };
 
+  let evolutionAnimation = null;
   if (readyToEvolve && hasKeyPress(buttonEvents)) {
     if (evolution.auto) {
-      pet = evolvePet(pet, evolution.auto);
-      activeTransport.playSound?.(SOUND.EVOLVE);   // celebrate the evolution
+      const fromSpecies = pet.species;
+      const toSpecies = evolution.auto;
+      pet = evolvePet(pet, toSpecies);
+      evolutionAnimation = { fromSpecies, toSpecies };
     } else if (evolution.candidates.length > 0) {
       pet = { ...pet, pendingCandidates: evolution.candidates };
     }
+  }
+
+  if (evolutionAnimation) {
+    saveState(statePath, pet);
+    await playEvolutionAnimation({ transport: activeTransport, ...evolutionAnimation, delay: evolutionDelay });
   }
 
   const mood = deriveMood(usage);
