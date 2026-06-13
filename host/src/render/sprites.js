@@ -27,6 +27,11 @@ export async function loadBuddySprite(species = "eevee", options = {}) {
   return loadSpriteGray(fileURLToPath(spriteUrl), { size: null, ...options });
 }
 
+export async function loadOakSprite(options = {}) {
+  const url = new URL("../../seed/oak.png", import.meta.url);
+  return loadSpriteGray(fileURLToPath(url), { size: null, ...options });
+}
+
 export function makePlaceholderSprite(size = 96) {
   const gray = new Uint8Array(size * size);
   for (let y = 0; y < size; y += 1) {

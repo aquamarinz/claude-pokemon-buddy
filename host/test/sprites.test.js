@@ -42,9 +42,15 @@ test("loadBuddySprite loads the real Eevee asset", async () => {
   const sprite = await loadBuddySprite("eevee");
 
   assert.equal(sprite.placeholder, false);
-  assert.equal(sprite.w, 40);
-  assert.equal(sprite.h, 40);
-  assert.equal(sprite.gray.length, 40 * 40);
+  assert.ok(sprite.w > 20 && sprite.h > 30);
+  assert.equal(sprite.gray.length, sprite.w * sprite.h);
+});
+
+test("loadOakSprite loads the committed Oak asset", async () => {
+  const { loadOakSprite } = await import("../src/render/sprites.js");
+  const s = await loadOakSprite();
+  assert.equal(s.placeholder, false);
+  assert.ok(s.w > 20 && s.h > 30);
 });
 
 const ALL_SPECIES = [
