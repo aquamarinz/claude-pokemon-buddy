@@ -115,7 +115,9 @@ export async function runOneTick({
       spriteH: sprite.h,
       mood,
       level: pet.level,
-      bond: bondHearts(pet.bond),
+      species: pet.species,
+      readyToEvolve: pet.readyToEvolve,
+      bond: pet.bond,
       expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
       bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species),
     },
@@ -348,10 +350,6 @@ async function loadWeatherSnapshot(weatherClient, config) {
   const weather = await weatherClient.get(config.lat, config.lon);
   if (weather.temp == null || weather.cond === "—") return { ...DEFAULT_WEATHER, degraded: true };
   return weather;
-}
-
-function bondHearts(bond) {
-  return Math.max(0, Math.min(5, Math.round(Number(bond ?? 0) / 40)));
 }
 
 function hasKeyPress(events) {

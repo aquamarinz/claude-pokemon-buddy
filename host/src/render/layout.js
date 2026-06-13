@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 import { EEVEE_IDLE_CRY } from "../pet/cries.js";
+import { zhName } from "../pet/species-meta.js";
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
 import { ditherSpriteGray, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
@@ -128,6 +129,7 @@ function drawBuddyPanel(g, model) {
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
   });
+  drawSpeciesLine(g, panelX, panelW, buddy);
 
   g.fillStyle = INK;
   g.font = `800 12px ${MONO}`;
@@ -151,6 +153,24 @@ function drawBuddyPanel(g, model) {
   g.font = `700 12px ${CJK}`;
   g.fillText("亲密度", panelX + 14, 288);
   drawHearts(g, panelX + 58, 277, hearts);
+}
+
+function drawSpeciesLine(g, panelX, panelW, buddy) {
+  const cx = panelX + panelW / 2;
+  g.font = `800 12px ${CJK}`;
+  g.textAlign = "center";
+  if (buddy.readyToEvolve) {
+    const x = panelX + 18;
+    g.fillStyle = INK;
+    g.fillRect(x, 184, panelW - 36, 18);
+    g.fillStyle = PAPER;
+    g.fillText("▲ 按 KEY 进化！", cx, 198);
+  } else {
+    g.fillStyle = INK;
+    g.fillText(zhName(buddy.species ?? "eevee"), cx, 198);
+  }
+  g.textAlign = "left";
+  g.fillStyle = INK;
 }
 
 export function fitTodayLineFont(g, text) {

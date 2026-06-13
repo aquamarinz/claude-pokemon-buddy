@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createCanvas } from "@napi-rs/canvas";
 
 import { fitTodayLineFont, formatReset, heartCount, layoutText, weatherIconKind } from "../src/render/layout.js";
+import { renderFrame } from "../src/render/frame.js";
 import { LEFT_W } from "../src/render/palette.js";
 
 test("layout text includes wind in the weather detail row", () => {
@@ -141,3 +142,34 @@ test("layout text uses degraded labels instead of fake reset data", () => {
   assert.match(text.weatherMain, /--°/);
   assert.match(text.weatherDetail, /风--/);
 });
+
+test("ready-to-evolve badge differs from species-name line", async () => {
+  const normal = await renderFrame(baseModel({ readyToEvolve: false }));
+  const ready = await renderFrame(baseModel({ readyToEvolve: true }));
+  assert.ok(!normal.pngBuffer.equals(ready.pngBuffer), "badge state must render differently");
+});
+
+function baseModel(extra) {
+  return {
+    p5h: 12,
+    pweek: 34,
+    todayCost: 1,
+    now: new Date(2026, 5, 10, 14),
+    weather: { cond: "多云", temp: 12, humidity: 50 },
+    room: { t: 21, h: 45 },
+    out: { t: 12, h: 50 },
+    buddy: {
+      spriteGray: new Uint8Array(40 * 40).fill(255),
+      spriteW: 40,
+      spriteH: 40,
+      mood: "happy",
+      level: 5,
+      bond: 40,
+      expPct: 40,
+      bubble: "Bui!",
+      species: "eevee",
+      readyToEvolve: false,
+      ...extra,
+    },
+  };
+}
