@@ -17,12 +17,12 @@ for (const scene of [
   });
 }
 
-const HATCH_END = 5; // HATCH_FRAMES - 1
+const HATCH_BLACK = 9;
 
-test("hatch end-frame shows the chosen species' real sprite", async () => {
-  const bulba = await renderOnboarding({ kind: "hatch", frame: HATCH_END, species: "bulbasaur" });
-  const eevee = await renderOnboarding({ kind: "hatch", frame: HATCH_END, species: "eevee" });
-  assert.ok(!bulba.pngBuffer.equals(eevee.pngBuffer), "different species must render different end-frame sprites");
+test("hatch final frame is a full-black flash (reveal moved to born screen)", async () => {
+  const { bitmap } = await renderOnboarding({ kind: "hatch", frame: HATCH_BLACK, species: "eevee" });
+  const allBlack = bitmap.bytes.every((b) => b === 0xff);
+  assert.ok(allBlack, "final hatch frame must be a black flash");
 });
 
 test("drawEgg renders a distinct egg per candidate species (choose screen)", async () => {

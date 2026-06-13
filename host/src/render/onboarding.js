@@ -8,7 +8,7 @@ import { loadBuddySprite } from "./sprites.js";
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
 const MONO = '"Zpix"';
 
-const HATCH_FRAMES = 6;
+const HATCH_FRAMES = 12;
 
 function px(g, t, x, y, size, align = "left", weight = 700) {
   g.font = `${weight} ${size}px ${MONO}`;
@@ -84,21 +84,17 @@ function drawChoose(g, candidates, sel) {
 
 async function drawHatch(g, frame, species) {
   const f = Math.max(0, Math.min(HATCH_FRAMES - 1, frame));
-  px(g, "孵化中…", W / 2, 40, 24, "center", 800);
-  if (f >= HATCH_FRAMES - 1) {
-    // 末帧揭晓所选物种真 sprite; species 缺省(旧调用)回退占位轮廓
-    const sprite = species ? await loadBuddySprite(species) : null;
-    if (sprite && sprite.gray && !sprite.placeholder) {
-      drawSprite(g, sprite.gray, { x: W / 2 - 68, y: 82, maxSize: 136, srcW: sprite.w, srcH: sprite.h, scale: 3 });
-    } else {
-      critter(g, W / 2, 150);
-    }
-  } else {
-    const crack = f < 2 ? 0 : f < 4 ? 1 : 2;
-    const shake = f % 2 === 0 ? -4 : 4;
-    drawEgg(g, species ?? "eevee", W / 2, 150, 1.4, { crack, shake });
+  if (f >= 9) {
+    g.fillStyle = INK;
+    g.fillRect(0, 0, W, H);
+    return;
   }
-  px(g, "♪ 孵化音", W / 2, H - 18, 12, "center", 600);
+
+  px(g, "孵化中…", W / 2, 40, 24, "center", 800);
+  const shake = [0, -3, 3, -6, 6, -8, 8, -4, 4][f] ?? 0;
+  const crack = f < 5 ? 0 : f < 7 ? 1 : 2;
+  drawEgg(g, species ?? "eevee", W / 2, 150, 1.4, { crack, shake });
+  if (f >= 5) drawHatchShards(g, W / 2 + shake, 150, 1.4, f);
 }
 
 function drawBorn(g, name, sprite) {
@@ -110,6 +106,19 @@ function drawBorn(g, name, sprite) {
   px(g, name + " 诞生了！", W / 2, 196, 24, "center", 800);
   px(g, "默认名 " + name, W / 2, 226, 12, "center", 600);
   px(g, "▶ KEY 开始养成", W / 2, H - 22, 12, "center", 700);
+}
+
+function drawHatchShards(g, cx, cy, scale, frame) {
+  const shards = frame < 7
+    ? [[-22, -34, -0.5, 5], [24, -20, 0.4, 4], [-29, 10, -0.2, 4]]
+    : [[-27, -38, -0.7, 6], [29, -26, 0.5, 5], [-34, 7, -0.4, 5], [26, 18, 0.8, 4], [2, -48, 0.1, 5]];
+  for (const [dx, dy, angle, size] of shards) {
+    g.save();
+    g.translate(cx + dx * scale, cy + dy * scale);
+    g.rotate(angle);
+    triangle(g, -size * scale, size * scale, 0, -size * scale, size * scale, size * scale, true);
+    g.restore();
+  }
 }
 
 function drawEgg(g, species, cx, cy, scale = 1, { crack = 0, shake = 0 } = {}) {

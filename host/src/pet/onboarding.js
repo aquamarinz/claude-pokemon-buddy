@@ -2,8 +2,9 @@ import { renderOnboarding } from "../render/onboarding.js";
 import { CANDIDATES, OAK_LINES } from "./onboarding-data.js";
 import { SOUND } from "../transport/proto.js";
 
-const HATCH_FRAMES = 6;
-const HATCH_FRAME_MS = 220;
+const HATCH_FRAMES = 12;
+const HATCH_FRAME_MS = [220, 190, 190, 175, 175, 170, 170, 160, 160, 180, 160, 160];
+const FIRST_BLACK_FRAME = 9;
 
 export async function runOnboarding(io) {
   // 大木开场白：逐页累积，每页等一次 KEY
@@ -26,12 +27,12 @@ export async function runOnboarding(io) {
   }
   const chosen = CANDIDATES[sel];
 
-  // 孵化动画 + 音; 末帧揭晓所选物种真 sprite
+  // 孵化动画 + 音; 揭晓交给诞生屏
   for (let f = 0; f < HATCH_FRAMES; f += 1) {
     await io.push(await renderOnboarding({ kind: "hatch", frame: f, species: chosen.species }));
-    await io.delay(HATCH_FRAME_MS);
+    if (f === FIRST_BLACK_FRAME) io.playSound(SOUND.EVOLVE); // 复用进化 fanfare 作孵化音
+    await io.delay(HATCH_FRAME_MS[f] ?? 170);
   }
-  io.playSound(SOUND.EVOLVE); // 复用进化 fanfare 作孵化音
 
   // 诞生
   await io.push(await renderOnboarding({ kind: "born", species: chosen.species, name: chosen.name }));
