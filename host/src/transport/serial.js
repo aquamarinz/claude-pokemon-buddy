@@ -34,16 +34,38 @@ export async function createSerialTransport({
 } = {}) {
   if (port) return makeTransport({ port, ...transportOptions });
 
-  const serialPath = path ?? await findEspPort({ SerialPort });
-  if (!serialPath) return null;
+  const openPort = async () => {
+    const found = path ?? await findEspPort({ SerialPort });
+    if (!found) return null;
+
+    const sp = new SerialPort({ path: found, baudRate, autoOpen: false });
+    const opened = await new Promise((resolve) => {
+      sp.open((error) => resolve(!error));
+    });
+    if (!opened) {
+      try {
+        sp.close?.();
+      } catch {
+        // Ignore close errors while probing for a usable serial port.
+      }
+      return null;
+    }
+    return sp;
+  };
+
+  const first = await openPort();
+  if (!first) return null;
   return makeTransport({
-    port: new SerialPort({ path: serialPath, baudRate }),
+    port: first,
+    openPort,
     ...transportOptions,
   });
 }
 
 export function makeTransport({
   port,
+  openPort,
+  reconnectDelayMs = 1500,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
 } = {}) {
@@ -53,28 +75,31 @@ export function makeTransport({
   const queue = [];
   let rx = new Uint8Array(0);
   let pending = null;
+  let currentPort = port;
+  let connected = !!port;
+  let reconnectTimer = null;
+  let stopped = false;
+  let detachPort = () => {};
   let nextSeq = 0;
   let latestSensor = null;
 
-  port.on?.("data", (chunk) => {
-    rx = append(rx, chunk);
-    readAvailableFrames();
-  });
+  attachPort(port);
 
   function pushFrame(payload) {
-    return new Promise((resolve, reject) => {
+    if (!connected) return Promise.resolve({ ok: false, disconnected: true });
+
+    return new Promise((resolve) => {
       queue.push({
         type: T.FRAME,
         payload: Uint8Array.from(payload),
         resolve,
-        reject,
       });
       pump();
     });
   }
 
   function pump() {
-    if (pending || queue.length === 0) return;
+    if (!connected || pending || queue.length === 0) return;
     pending = {
       ...queue.shift(),
       seq: nextSeq,
@@ -93,9 +118,7 @@ export function makeTransport({
       seq: current.seq,
       payload: current.payload,
     });
-    port.write(bytes, (error) => {
-      if (error && pending === current) failPending(error);
-    });
+    clearTimeout(current.timer);
     current.timer = setTimeout(() => {
       if (pending !== current) return;
       if (current.sends <= maxRetries) {
@@ -104,6 +127,13 @@ export function makeTransport({
       }
       finishPending({ ok: false, stale: true, seq: current.seq });
     }, timeoutMs);
+    try {
+      currentPort.write(bytes, (error) => {
+        if (error && pending === current) handleDisconnect();
+      });
+    } catch {
+      if (pending === current) handleDisconnect();
+    }
   }
 
   function readAvailableFrames() {
@@ -162,20 +192,96 @@ export function makeTransport({
     pump();
   }
 
-  function failPending(error) {
-    const current = pending;
-    clearTimeout(current.timer);
-    pending = null;
-    current.reject(error);
+  function handleDisconnect() {
+    if (!connected) return;
+
+    connected = false;
+    detachPort();
+    resolveDisconnected();
+    if (openPort && !stopped) scheduleReconnect();
+  }
+
+  function resolveDisconnected() {
+    const result = { ok: false, disconnected: true };
+    if (pending) {
+      const current = pending;
+      clearTimeout(current.timer);
+      pending = null;
+      current.resolve(result);
+    }
+    while (queue.length > 0) {
+      queue.shift().resolve(result);
+    }
+  }
+
+  function scheduleReconnect() {
+    if (stopped || reconnectTimer) return;
+    reconnectTimer = setTimeout(tryReconnect, reconnectDelayMs);
+  }
+
+  async function tryReconnect() {
+    reconnectTimer = null;
+    if (stopped) return;
+
+    let nextPort = null;
+    try {
+      nextPort = await openPort();
+    } catch {
+      nextPort = null;
+    }
+
+    if (!nextPort) {
+      scheduleReconnect();
+      return;
+    }
+
+    currentPort = nextPort;
+    attachPort(nextPort);
+    connected = true;
+    events.emit("reconnect");
     pump();
+  }
+
+  function attachPort(nextPort) {
+    detachPort();
+
+    const onData = (chunk) => {
+      rx = append(rx, chunk);
+      readAvailableFrames();
+    };
+    const onClose = () => {
+      handleDisconnect();
+    };
+    const onError = () => {
+      handleDisconnect();
+    };
+
+    nextPort.on?.("data", onData);
+    nextPort.on?.("close", onClose);
+    nextPort.on?.("error", onError);
+    detachPort = () => {
+      removeListener(nextPort, "data", onData);
+      removeListener(nextPort, "close", onClose);
+      removeListener(nextPort, "error", onError);
+      detachPort = () => {};
+    };
   }
 
   return {
     pushFrame,
     playSound(soundId) {
+      if (!connected) return;
       // Fire-and-forget: the device plays the sound and does not ACK a PLAY
       // frame, so this bypasses the stop-and-wait pump used for FRAMEs.
-      port.write(encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+      try {
+        currentPort.write(encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+      } catch {
+        // Ignore fire-and-forget write failures.
+      }
+    },
+    onReconnect(callback) {
+      events.on("reconnect", callback);
+      return () => events.off("reconnect", callback);
     },
     onButton(callback) {
       events.on("button", callback);
@@ -189,8 +295,13 @@ export function makeTransport({
       return latestSensor ? { ...latestSensor } : null;
     },
     close() {
+      stopped = true;
+      connected = false;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
       clearTimeout(pending?.timer);
-      port.close?.();
+      detachPort();
+      currentPort.close?.();
     },
   };
 }
@@ -209,6 +320,14 @@ function append(a, b) {
 
 function ackSeq(frame) {
   return frame.payload.length > 0 ? frame.payload[0] : frame.seq;
+}
+
+function removeListener(emitter, eventName, listener) {
+  if (emitter.off) {
+    emitter.off(eventName, listener);
+    return;
+  }
+  emitter.removeListener?.(eventName, listener);
 }
 
 function parseButton(payload) {

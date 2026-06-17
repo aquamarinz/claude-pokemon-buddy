@@ -87,17 +87,185 @@ test("pushFrame resends on timeout and resolves stale after max retries", async 
   assert.deepEqual(result, { ok: false, stale: true, seq: 0 });
 });
 
+test("pushFrame resolves disconnected immediately after port close", async () => {
+  const port = new FakePort();
+  const transport = makeTransport({
+    port,
+    openPort: async () => null,
+    reconnectDelayMs: 5,
+  });
+
+  port.emitClose();
+
+  const result = await transport.pushFrame(Uint8Array.from([1]));
+
+  assert.deepEqual(result, { ok: false, disconnected: true });
+  assert.equal(port.writes.length, 0);
+  transport.close();
+});
+
+test("pushFrame uses a reconnected port after close", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => port2,
+    reconnectDelayMs: 5,
+    timeoutMs: 50,
+    maxRetries: 0,
+  });
+
+  port1.emitClose();
+  await waitFor(() => port2.listenerCount("data") > 0);
+
+  const sent = transport.pushFrame(Uint8Array.from([7]));
+  assert.equal(port2.writes.length, 1);
+  const frame = decodeFrame(port2.writes[0]);
+
+  port2.emitData(encodeFrame({ type: T.ACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+
+  assert.deepEqual(await sent, { ok: true, seq: 0 });
+  transport.close();
+});
+
+test("onReconnect callback runs after automatic reconnect", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => port2,
+    reconnectDelayMs: 5,
+  });
+  let reconnects = 0;
+
+  const off = transport.onReconnect(() => {
+    reconnects += 1;
+  });
+  port1.emitClose();
+
+  await waitFor(() => reconnects === 1);
+  assert.equal(reconnects, 1);
+  off();
+  transport.close();
+});
+
+test("automatic reconnect retries until openPort returns a port", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  let attempts = 0;
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => {
+      attempts += 1;
+      return attempts < 3 ? null : port2;
+    },
+    reconnectDelayMs: 5,
+    timeoutMs: 50,
+    maxRetries: 0,
+  });
+
+  port1.emitClose();
+  await waitFor(() => attempts >= 3 && port2.listenerCount("data") > 0);
+
+  const sent = transport.pushFrame(Uint8Array.from([8]));
+  const frame = decodeFrame(port2.writes[0]);
+  port2.emitData(encodeFrame({ type: T.ACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+
+  assert.deepEqual(await sent, { ok: true, seq: 0 });
+  transport.close();
+});
+
+test("button and sensor callbacks remain active after reconnect", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => port2,
+    reconnectDelayMs: 5,
+  });
+  const buttons = [];
+  const sensors = [];
+
+  transport.onButton((event) => buttons.push(event));
+  transport.onSensor((event) => sensors.push(event));
+  port1.emitClose();
+  await waitFor(() => port2.listenerCount("data") > 0);
+
+  port2.emitData(encodeFrame({ type: T.BUTTON, seq: 9, payload: Uint8Array.from([2, 5]) }));
+  port2.emitData(encodeFrame({ type: T.SENSOR, seq: 10, payload: sensorPayload(187, 44) }));
+
+  assert.deepEqual(buttons, [{ key: "BOOT", kind: "up" }]);
+  assert.deepEqual(sensors, [{ t: 18.7, h: 44 }]);
+  assert.deepEqual(transport.feedSensor(), { t: 18.7, h: 44 });
+  transport.close();
+});
+
+test("close stops reconnect attempts", async () => {
+  const port = new FakePort();
+  let attempts = 0;
+  const transport = makeTransport({
+    port,
+    openPort: async () => {
+      attempts += 1;
+      return null;
+    },
+    reconnectDelayMs: 5,
+  });
+
+  transport.close();
+  port.emitClose();
+  await sleep(20);
+
+  assert.equal(attempts, 0);
+});
+
+test("write callback errors trigger reconnect instead of rejecting", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  let attempts = 0;
+  port1.writeError = new Error("disconnected");
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => {
+      attempts += 1;
+      return port2;
+    },
+    reconnectDelayMs: 5,
+    timeoutMs: 50,
+  });
+
+  const result = await transport.pushFrame(Uint8Array.from([1]));
+
+  assert.deepEqual(result, { ok: false, disconnected: true });
+  await waitFor(() => attempts === 1);
+  transport.close();
+});
+
 class FakePort extends EventEmitter {
   writes = [];
+  closed = false;
+  writeError = null;
 
   write(bytes, callback) {
     this.writes.push(Uint8Array.from(bytes));
-    callback?.();
+    callback?.(this.writeError);
     return true;
+  }
+
+  close() {
+    this.closed = true;
   }
 
   emitData(bytes) {
     this.emit("data", Buffer.from(bytes));
+  }
+
+  emitClose() {
+    this.emit("close");
+  }
+
+  emitError(error = new Error("serial error")) {
+    this.emit("error", error);
   }
 }
 
@@ -107,4 +275,18 @@ function sensorPayload(tempTenths, humidity) {
   view.setInt16(0, tempTenths, true);
   payload[2] = humidity;
   return payload;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitFor(predicate) {
+  for (let i = 0; i < 50; i += 1) {
+    if (predicate()) return;
+    await sleep(2);
+  }
+  assert.equal(predicate(), true);
 }

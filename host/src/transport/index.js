@@ -42,6 +42,9 @@ function wrapMockTransport(mock) {
 
 function wrapSerialTransport(serial, { framePath }) {
   let previousBytes = null;
+  serial.onReconnect?.(() => {
+    previousBytes = null;
+  });
 
   return {
     ...serial,
