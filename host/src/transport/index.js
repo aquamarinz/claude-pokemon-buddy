@@ -33,6 +33,7 @@ function wrapMockTransport(mock) {
   return {
     ...mock,
     kind: "mock",
+    setActiveCry() {},
     async push(frame) {
       return mock.push(frame?.pngBuffer ?? frame);
     },
@@ -42,13 +43,19 @@ function wrapMockTransport(mock) {
 
 function wrapSerialTransport(serial, { framePath }) {
   let previousBytes = null;
+  let lastActiveCry = null;
   serial.onReconnect?.(() => {
     previousBytes = null;
+    if (lastActiveCry != null) serial.setActiveCry(lastActiveCry);
   });
 
   return {
     ...serial,
     kind: "serial",
+    setActiveCry(id) {
+      lastActiveCry = id & 0xff;
+      serial.setActiveCry(lastActiveCry);
+    },
     async push({ pngBuffer, bitmap }) {
       if (!bitmap) throw new Error("bitmap is required");
       writePreview(framePath, pngBuffer);

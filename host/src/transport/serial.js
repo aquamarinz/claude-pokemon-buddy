@@ -279,6 +279,15 @@ export function makeTransport({
         // Ignore fire-and-forget write failures.
       }
     },
+    setActiveCry(soundId) {
+      if (!connected) return;
+      // Fire-and-forget CONFIG frame: device stores it as the KEY-press cry id.
+      try {
+        currentPort.write(encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+      } catch {
+        // Ignore fire-and-forget write failures.
+      }
+    },
     onReconnect(callback) {
       events.on("reconnect", callback);
       return () => events.off("reconnect", callback);
