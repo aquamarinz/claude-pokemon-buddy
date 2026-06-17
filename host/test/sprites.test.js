@@ -66,6 +66,15 @@ for (const species of ALL_SPECIES) {
   });
 }
 
+test("re-baked buddy sprites fill the slot without overflowing it", async () => {
+  for (const species of ALL_SPECIES) {
+    const s = await loadBuddySprite(species);
+    const maxEdge = Math.max(s.w, s.h);
+    assert.ok(maxEdge <= 136, `${species} max edge ${maxEdge} must not exceed slot 136`);
+    assert.ok(maxEdge >= 128, `${species} max edge ${maxEdge} should be enlarged (~134)`);
+  }
+});
+
 test("ditherSpriteGray keeps sprite midtones as a 1-bit Bayer pattern", () => {
   const sprite = ditherSpriteGray(new Uint8Array(8 * 8).fill(128), 8, 8);
 

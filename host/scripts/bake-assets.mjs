@@ -36,7 +36,7 @@ async function fetchBytes(url) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function bakeDW(svgText, targetMax = 120) {
+async function bakeDW(svgText, targetMax = 134) {
   const image = await loadImage(Buffer.from(svgText));
   const scale = (targetMax * 4) / Math.max(image.width, image.height);
   const hiW = Math.max(1, Math.round(image.width * scale));
