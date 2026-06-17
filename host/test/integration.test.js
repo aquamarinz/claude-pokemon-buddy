@@ -256,6 +256,32 @@ test("runOneTick sets the active cry id for the pet's species", async () => {
   assert.ok(cryCalls.includes(3));
 });
 
+test("runOneTick reports the same render model shape used for buddy frames", async () => {
+  const statePath = join("out", "test-render-model-state.json");
+  const framePath = join("out", "test-render-model-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+
+  const models = [];
+  await runOneTick({
+    usage: usageWithTokens(1_000),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-30",
+    onRenderModel: (model) => models.push(model),
+  });
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0].buddy.species, "eevee");
+  assert.ok(models[0].buddy.spriteGray instanceof Uint8Array);
+  assert.equal(typeof models[0].buddy.bubble, "string");
+  assert.equal(Object.hasOwn(models[0].buddy, "animPhase"), false);
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

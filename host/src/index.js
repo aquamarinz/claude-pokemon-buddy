@@ -10,6 +10,7 @@ import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
 import { runOnboarding } from "./pet/onboarding.js";
+import { createBuddyAnimator } from "./render/buddy-animator.js";
 import { playEvolutionAnimation } from "./render/evolution-anim.js";
 import { renderFrame } from "./render/frame.js";
 import { loadBuddySprite } from "./render/sprites.js";
@@ -62,6 +63,7 @@ export async function runOneTick({
   transportFactory = createTransport,
   personalityRng = Math.random,
   evolutionDelay,
+  onRenderModel,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
@@ -114,7 +116,7 @@ export async function runOneTick({
   const cryId = cryAudioId(pet.species);
   if (cryId != null) activeTransport.setActiveCry?.(cryId);
   const sprite = await loadBuddySprite(pet.species);
-  const { pngBuffer, bitmap } = await renderFrame({
+  const model = {
     ...usage,
     now,
     weather,
@@ -135,7 +137,9 @@ export async function runOneTick({
       expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
       bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species, mood),
     },
-  });
+  };
+  onRenderModel?.(model);
+  const { pngBuffer, bitmap } = await renderFrame(model);
 
   saveState(statePath, pet);
   offButtons?.();
@@ -157,6 +161,12 @@ export async function main({
 } = {}) {
   let config = loadConfig(configPath);
   const transport = await createTransport({ framePath });
+  let currentModel = null;
+  const animator = createBuddyAnimator({
+    transport,
+    getModel: () => currentModel,
+    render: renderFrame,
+  });
 
   await runOnboardingGate({
     statePath,
@@ -188,6 +198,7 @@ export async function main({
   const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
   };
@@ -197,25 +208,39 @@ export async function main({
 
   let lastHour = new Date().getHours();
   async function tick() {
-    const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
-    const selected = usageForDisplay(snapshot, lastKnownUsage);
-    lastKnownUsage = selected.lastKnown;
-    await pollUsageOnce().catch(() => {});
-    const usage = mergeUsage(selected.usage, loadRateLimits());
-    const weather = await loadWeatherSnapshot(weatherClient, config);
-    const room = transport.feedSensor();
-    const pet = await runOneTick({ usage, weather, room, statePath, framePath, transport });
-    runtime = { usage, weather, room, pet };
-    const hour = new Date().getHours();
-    if (hour !== lastHour) {
-      lastHour = hour;
-      transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+    animator.pause();
+    try {
+      const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
+      const selected = usageForDisplay(snapshot, lastKnownUsage);
+      lastKnownUsage = selected.lastKnown;
+      await pollUsageOnce().catch(() => {});
+      const usage = mergeUsage(selected.usage, loadRateLimits());
+      const weather = await loadWeatherSnapshot(weatherClient, config);
+      const room = transport.feedSensor();
+      const pet = await runOneTick({
+        usage,
+        weather,
+        room,
+        statePath,
+        framePath,
+        transport,
+        onRenderModel: (model) => { currentModel = model; },
+      });
+      runtime = { usage, weather, room, pet };
+      const hour = new Date().getHours();
+      if (hour !== lastHour) {
+        lastHour = hour;
+        transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+      }
+      console.log(`wrote ${framePath}`);
+    } finally {
+      animator.resume();
     }
-    console.log(`wrote ${framePath}`);
   }
 
   await tick();
   if (once) return;
+  animator.start();
 
   while (!stopped) {
     await new Promise((resolve) => {
