@@ -3,6 +3,7 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { zhName } from "../pet/species-meta.js";
+import { drawIdleAccent } from "./idle-accents.js";
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
 import { ditherSpriteGray, dilate1bpp, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
@@ -134,6 +135,14 @@ function drawBuddyPanel(g, model) {
     srcH: buddy.spriteH,
     bold: true,
   });
+  if (hasAnimPhase) {
+    drawIdleAccent(g, buddy.species ?? "eevee", {
+      x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
+      y: 60 + bob,
+      w: BUDDY_SPRITE_SLOT,
+      h: BUDDY_SPRITE_SLOT,
+    }, phase);
+  }
   drawSpeciesLine(g, panelX, panelW, buddy);
 
   g.fillStyle = INK;
