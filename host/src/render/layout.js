@@ -17,6 +17,7 @@ const MOOD_ZH = { shocked: "震惊", fainted: "力竭", strained: "吃力", focu
 export const BUDDY_SPRITE_SLOT = 136;
 export const BUDDY_SPRITE_SCALE = 3;
 export const BUDDY_BOB = [0, -1, -2, -1]; // 呼吸浮动（周期 4，幅度 ≤2px）
+const BUDDY_SPRITE_TOP = 50;
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
 const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
@@ -127,10 +128,10 @@ function drawBuddyPanel(g, model) {
   const hop = Number.isInteger(buddy.hop) ? buddy.hop : 0;
 
   drawBubble(g, W - 8, 11, buddy.bubble ?? EEVEE_IDLE_CRY);
-  drawShadow(g, panelX + panelW / 2, 190);
+  drawShadow(g, panelX + panelW / 2, 186);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
-    y: 60 + bob - hop,
+    y: BUDDY_SPRITE_TOP + bob - hop,
     maxSize: BUDDY_SPRITE_SLOT,
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
@@ -139,7 +140,7 @@ function drawBuddyPanel(g, model) {
   if (hasAnimPhase) {
     drawIdleAccent(g, buddy.species ?? "eevee", {
       x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
-      y: 60 + bob - hop,
+      y: BUDDY_SPRITE_TOP + bob - hop,
       w: BUDDY_SPRITE_SLOT,
       h: BUDDY_SPRITE_SLOT,
     }, phase);
