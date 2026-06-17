@@ -231,6 +231,31 @@ test("cross-day settlement freezes yesterday once and stays idempotent", async (
   assert.equal(second.streak, 1);
 });
 
+test("runOneTick sets the active cry id for the pet's species", async () => {
+  const statePath = join("out", "test-cry-state.json");
+  const framePath = join("out", "test-cry-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+
+  const cryCalls = [];
+  const mock = createMockTransport({ framePath });
+  mock.setActiveCry = (id) => cryCalls.push(id);
+
+  await runOneTick({
+    usage: usageWithTokens(1_000),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock,
+    today: "2026-05-30",
+  });
+
+  // 无 hatched 存档 → ensurePet 出 eevee → cryAudioId=3
+  assert.ok(cryCalls.includes(3));
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

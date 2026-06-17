@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { cryAudioId } from "./pet/cry-audio.js";
 import { cryFor } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
@@ -110,6 +111,8 @@ export async function runOneTick({
   }
 
   const mood = deriveMood(usage);
+  const cryId = cryAudioId(pet.species);
+  if (cryId != null) activeTransport.setActiveCry?.(cryId);
   const sprite = await loadBuddySprite(pet.species);
   const { pngBuffer, bitmap } = await renderFrame({
     ...usage,
@@ -130,7 +133,7 @@ export async function runOneTick({
       readyToEvolve: pet.readyToEvolve,
       bond: pet.bond,
       expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
-      bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species),
+      bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species, mood),
     },
   });
 
