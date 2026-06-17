@@ -124,12 +124,13 @@ function drawBuddyPanel(g, model) {
   const hasAnimPhase = Number.isInteger(buddy.animPhase); // 缺省 → bob=0 且不画 accent（既有渲染零变化）
   const phase = hasAnimPhase ? buddy.animPhase : 0;
   const bob = BUDDY_BOB[phase % BUDDY_BOB.length];
+  const hop = Number.isInteger(buddy.hop) ? buddy.hop : 0;
 
   drawBubble(g, W - 8, 11, buddy.bubble ?? EEVEE_IDLE_CRY);
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
-    y: 60 + bob,
+    y: 60 + bob - hop,
     maxSize: BUDDY_SPRITE_SLOT,
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
@@ -138,7 +139,7 @@ function drawBuddyPanel(g, model) {
   if (hasAnimPhase) {
     drawIdleAccent(g, buddy.species ?? "eevee", {
       x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
-      y: 60 + bob,
+      y: 60 + bob - hop,
       w: BUDDY_SPRITE_SLOT,
       h: BUDDY_SPRITE_SLOT,
     }, phase);
