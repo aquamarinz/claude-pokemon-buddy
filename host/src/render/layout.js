@@ -15,6 +15,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const MOOD_ZH = { shocked: "震惊", fainted: "力竭", strained: "吃力", focused: "专注", happy: "开心" };
 export const BUDDY_SPRITE_SLOT = 136;
 export const BUDDY_SPRITE_SCALE = 3;
+export const BUDDY_BOB = [0, -1, -2, -1]; // 呼吸浮动（周期 4，幅度 ≤2px）
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
 const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
@@ -119,12 +120,15 @@ function drawBuddyPanel(g, model) {
   const panelX = LEFT_W;
   const panelW = W - LEFT_W;
   const buddy = model.buddy ?? {};
+  const hasAnimPhase = Number.isInteger(buddy.animPhase); // 缺省 → bob=0 且不画 accent（既有渲染零变化）
+  const phase = hasAnimPhase ? buddy.animPhase : 0;
+  const bob = BUDDY_BOB[phase % BUDDY_BOB.length];
 
   drawBubble(g, W - 8, 11, buddy.bubble ?? EEVEE_IDLE_CRY);
   drawShadow(g, panelX + panelW / 2, 190);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
-    y: 60,
+    y: 60 + bob,
     maxSize: BUDDY_SPRITE_SLOT,
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
