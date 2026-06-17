@@ -4,7 +4,7 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { zhName } from "../pet/species-meta.js";
 import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
-import { ditherSpriteGray, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
+import { ditherSpriteGray, dilate1bpp, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
 export const ZPIX_FONT_PATH = fileURLToPath(new URL("../../seed/fonts/zpix.ttf", import.meta.url));
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
@@ -128,6 +128,7 @@ function drawBuddyPanel(g, model) {
     maxSize: BUDDY_SPRITE_SLOT,
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
+    bold: true,
   });
   drawSpeciesLine(g, panelX, panelW, buddy);
 
@@ -189,14 +190,17 @@ export function drawSprite(g, spriteGray, {
   scale = BUDDY_SPRITE_SCALE,
   mode = "threshold",
   threshold = SPRITE_CRISP_THRESHOLD,
+  bold = false,
+  boldRadius = 1,
 } = {}) {
   const pixels = spriteGray instanceof Uint8Array ? spriteGray : placeholderSprite(96, 96);
   const side = Math.max(1, Math.round(Math.sqrt(pixels.length)));
   const sourceW = Number.isInteger(srcW) && srcW > 0 ? srcW : (side * side === pixels.length ? side : 96);
   const sourceH = Number.isInteger(srcH) && srcH > 0 ? srcH : Math.max(1, Math.floor(pixels.length / sourceW));
-  const rendered = mode === "dither"
+  let rendered = mode === "dither"
     ? ditherSpriteGray(pixels, sourceW, sourceH)
     : thresholdSpriteGray(pixels, sourceW, sourceH, { threshold });
+  if (bold) rendered = dilate1bpp(rendered, sourceW, sourceH, boldRadius);
   const spriteCanvas = createCanvas(sourceW, sourceH);
   const sg = spriteCanvas.getContext("2d");
   const img = sg.createImageData(sourceW, sourceH);
