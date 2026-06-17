@@ -46,27 +46,34 @@ function wrapSerialTransport(serial, { framePath }) {
   let lastActiveCry = null;
   serial.onReconnect?.(() => {
     previousBytes = null;
-    if (lastActiveCry != null) serial.setActiveCry(lastActiveCry);
+    if (lastActiveCry != null) serial.setActiveCry(lastActiveCry); // P2: 重连重放
   });
+
+  async function doPush({ pngBuffer, bitmap }) {
+    if (!bitmap) throw new Error("bitmap is required");
+    writePreview(framePath, pngBuffer);
+    const rect = diffRect(previousBytes, bitmap.bytes, bitmap.w, bitmap.h);
+    if (!rect) return { ok: true, skipped: true };
+    const result = await serial.pushFrame(encodeDirtyPayload(rect));
+    if (result?.ok) previousBytes = Uint8Array.from(bitmap.bytes);
+    return result;
+  }
+
+  let chain = Promise.resolve();
+  function push(frame) {
+    const run = chain.then(() => doPush(frame));
+    chain = run.then(() => {}, () => {}); // 保持链活，吞错不阻断后续
+    return run;
+  }
 
   return {
     ...serial,
     kind: "serial",
-    setActiveCry(id) {
+    setActiveCry(id) {                       // P2: 原样保留
       lastActiveCry = id & 0xff;
       serial.setActiveCry(lastActiveCry);
     },
-    async push({ pngBuffer, bitmap }) {
-      if (!bitmap) throw new Error("bitmap is required");
-      writePreview(framePath, pngBuffer);
-
-      const rect = diffRect(previousBytes, bitmap.bytes, bitmap.w, bitmap.h);
-      if (!rect) return { ok: true, skipped: true };
-
-      const result = await serial.pushFrame(encodeDirtyPayload(rect));
-      if (result?.ok) previousBytes = Uint8Array.from(bitmap.bytes);
-      return result;
-    },
+    push,
   };
 }
 
