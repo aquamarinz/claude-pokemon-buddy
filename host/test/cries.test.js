@@ -21,3 +21,20 @@ test("cryFor falls back to a neutral note for unknown species", () => {
   assert.equal(cryFor("不存在"), "♪");
   assert.equal(cryFor(undefined), "♪");
 });
+
+test("cryFor returns happy/strained variants by mood", () => {
+  assert.equal(cryFor("eevee", "happy"), "Bui♪");
+  assert.equal(cryFor("eevee", "strained"), "bui…");
+  assert.equal(cryFor("charmander", "happy"), "噗噗!");
+});
+
+test("cryFor maps fainted/shocked to strained, focused to idle", () => {
+  assert.equal(cryFor("vaporeon", "fainted"), "凛~");
+  assert.equal(cryFor("vaporeon", "shocked"), "凛~");
+  assert.equal(cryFor("vaporeon", "focused"), "咻~");
+  assert.equal(cryFor("vaporeon"), "咻~"); // 无 mood -> idle
+});
+
+test("cryFor unknown species still falls back to ♪ regardless of mood", () => {
+  assert.equal(cryFor("不存在", "happy"), "♪");
+});

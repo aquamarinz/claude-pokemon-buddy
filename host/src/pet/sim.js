@@ -20,7 +20,12 @@ export function deriveMood({ p5h, todayCost }) {
 export function applyDailyGrowth(pet, { todayTokens, today } = {}) {
   const credited = dailyGrowthCredit(todayTokens);
   const sameDay = today && pet.lastGrowthDay === today;
-  const creditedExp = sameDay ? Number(pet.todayCreditedExp ?? 0) : 0;
+  // Newborn (or never-credited) on a known day: anchor today's already-spent usage as the
+  // baseline so the pet earns EXP only from tokens spent AFTER it was created. Without this,
+  // a pet born mid-day retroactively claims the whole day's exp (= one full level, since
+  // dailyExpCap === levelExp) and jumps straight to Lv.2.
+  const firstEver = today != null && pet.lastGrowthDay == null;
+  const creditedExp = sameDay ? Number(pet.todayCreditedExp ?? 0) : (firstEver ? credited.exp : 0);
   const creditedBond = sameDay ? Number(pet.todayCreditedBond ?? 0) : 0;
   const expGain = Math.max(0, credited.exp - creditedExp);
   const bondGain = Math.max(0, credited.bond - creditedBond);

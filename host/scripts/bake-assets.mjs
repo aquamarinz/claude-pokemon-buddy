@@ -36,7 +36,7 @@ async function fetchBytes(url) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function bakeDW(svgText, targetMax = 120) {
+async function bakeDW(svgText, targetMax = 155, boost = 25, maxInkRatio = 0.30) {
   const image = await loadImage(Buffer.from(svgText));
   const scale = (targetMax * 4) / Math.max(image.width, image.height);
   const hiW = Math.max(1, Math.round(image.width * scale));
@@ -62,7 +62,7 @@ async function bakeDW(svgText, targetMax = 120) {
 
   const data = g.getImageData(0, 0, w, h).data;
   const gray = rgbaToGray(data, w * h);
-  const threshold = calibratedThreshold(gray, 0.13, 25);
+  const threshold = calibratedThreshold(gray, 0.13, boost, maxInkRatio);
   return oneBitTransparentPng(gray, w, h, threshold);
 }
 
@@ -119,19 +119,20 @@ function rgbaToGray(data, pixels) {
   return gray;
 }
 
-function calibratedThreshold(gray, targetInkRatio, boost) {
-  let threshold = 128;
+// targetInkRatio: minimum ink (finds base threshold). boost: keep thin strokes solid.
+// maxInkRatio: hard cap — back the threshold off toward base so a large flat fill can't turn the
+// whole body into a solid blob (which erases interior detail like eyes on a dark-bodied sprite).
+function calibratedThreshold(gray, targetInkRatio, boost, maxInkRatio = 1) {
+  let base = 128;
   for (let t = 0; t <= 255; t += 1) {
     let ink = 0;
-    for (const value of gray) {
-      if (value < t) ink += 1;
-    }
-    if (ink / gray.length >= targetInkRatio) {
-      threshold = t;
-      break;
-    }
+    for (const value of gray) if (value < t) ink += 1;
+    if (ink / gray.length >= targetInkRatio) { base = t; break; }
   }
-  return Math.max(0, Math.min(255, threshold + boost));
+  let threshold = Math.max(0, Math.min(255, base + boost));
+  const inkAt = (t) => { let n = 0; for (const v of gray) if (v < t) n += 1; return n / gray.length; };
+  while (threshold > base && inkAt(threshold) > maxInkRatio) threshold -= 1;
+  return threshold;
 }
 
 async function oneBitTransparentPng(gray, w, h, threshold) {
@@ -150,10 +151,12 @@ async function oneBitTransparentPng(gray, w, h, threshold) {
   return canvas.encode("png");
 }
 
+// Per-species ink tuning approved from hardware review.
+const BOOST = { flareon: 6, umbreon: -15, eevee: 6, charmander: -12 };
 mkdirSync(SPRITES, { recursive: true });
 for (const [name, id] of Object.entries(SPECIES)) {
   const svg = (await fetchBytes(`${DW}/${id}.svg`)).toString("utf8");
-  const png = await bakeDW(svg);
+  const png = await bakeDW(svg, 155, BOOST[name] ?? 25, 0.30);
   writeFileSync(`${SPRITES}/${name}.png`, png);
   console.log(`wrote seed/sprites/${name}.png`);
 }

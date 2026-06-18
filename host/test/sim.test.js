@@ -24,6 +24,23 @@ test("applyDailyGrowth caps EXP gain and bond gain per day", () => {
   assert.ok(out.bond <= pet.bond + PARAMS.dailyBondCap);
 });
 
+test("newborn does not retroactively level up from pre-birth usage on its birth day", () => {
+  const newborn = { level: 1, exp: 0, bond: 0, todayCreditedExp: 0, todayCreditedBond: 0, lastGrowthDay: null };
+  // Heavy usage already spent today BEFORE the pet was created:
+  const out = applyDailyGrowth(newborn, { todayTokens: 99_999_999, today: "2026-06-17" });
+  assert.equal(out.level, 1, "newborn must stay Lv.1 on birth day");
+  assert.equal(out.expGain, 0, "birth day grants no exp from pre-birth tokens");
+  assert.equal(out.lastGrowthDay, "2026-06-17");
+});
+
+test("the day AFTER birth, the pet earns exp normally", () => {
+  let pet = { level: 1, exp: 0, bond: 0, todayCreditedExp: 0, todayCreditedBond: 0, lastGrowthDay: null };
+  pet = applyDailyGrowth(pet, { todayTokens: 99_999_999, today: "2026-06-17" }); // birth day: anchored
+  pet = applyDailyGrowth(pet, { todayTokens: 99_999_999, today: "2026-06-18" }); // next day: fresh budget
+  assert.equal(pet.expGain, PARAMS.dailyExpCap);
+  assert.equal(pet.level, 2);
+});
+
 test("applyDailyGrowth respects the daily bond soft cap", () => {
   const pet = { level: 1, exp: 0, bond: PARAMS.bondSoftCap - 1 };
 

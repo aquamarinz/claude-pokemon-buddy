@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { cryAudioId } from "./pet/cry-audio.js";
 import { cryFor } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
@@ -9,8 +10,10 @@ import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
 import { runOnboarding } from "./pet/onboarding.js";
+import { createBuddyAnimator } from "./render/buddy-animator.js";
 import { playEvolutionAnimation } from "./render/evolution-anim.js";
 import { renderFrame } from "./render/frame.js";
+import { playSignatureAnimation } from "./render/signature-anim.js";
 import { loadBuddySprite } from "./render/sprites.js";
 import { loadState, saveState } from "./state.js";
 import { createTransport } from "./transport/index.js";
@@ -48,6 +51,22 @@ export function mergeUsage(ccusageUsage, rateLimits) {
   };
 }
 
+export function shouldPlaySignature(event, pet) {
+  return event?.key === "KEY" && event?.kind === "short" && pet?.readyToEvolve === false;
+}
+
+// 串行化动作：tick 与招牌经同一队列互斥，杜绝 tick 帧插进招牌帧序列之间。
+export function createActionQueue() {
+  let chain = Promise.resolve();
+  return {
+    run(fn) {
+      const result = chain.then(fn);
+      chain = result.then(() => {}, () => {});
+      return result;
+    },
+  };
+}
+
 export async function runOneTick({
   usage,
   weather,
@@ -61,6 +80,7 @@ export async function runOneTick({
   transportFactory = createTransport,
   personalityRng = Math.random,
   evolutionDelay,
+  onRenderModel,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
@@ -110,8 +130,10 @@ export async function runOneTick({
   }
 
   const mood = deriveMood(usage);
+  const cryId = cryAudioId(pet.species);
+  if (cryId != null) activeTransport.setActiveCry?.(cryId);
   const sprite = await loadBuddySprite(pet.species);
-  const { pngBuffer, bitmap } = await renderFrame({
+  const model = {
     ...usage,
     now,
     weather,
@@ -130,9 +152,11 @@ export async function runOneTick({
       readyToEvolve: pet.readyToEvolve,
       bond: pet.bond,
       expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
-      bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species),
+      bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species, mood),
     },
-  });
+  };
+  onRenderModel?.(model);
+  const { pngBuffer, bitmap } = await renderFrame(model);
 
   saveState(statePath, pet);
   offButtons?.();
@@ -154,6 +178,12 @@ export async function main({
 } = {}) {
   let config = loadConfig(configPath);
   const transport = await createTransport({ framePath });
+  let currentModel = null;
+  const animator = createBuddyAnimator({
+    transport,
+    getModel: () => currentModel,
+    render: renderFrame,
+  });
 
   await runOnboardingGate({
     statePath,
@@ -168,6 +198,17 @@ export async function main({
   let stopped = false;
   let timer = null;
   let runtime = {};
+  const actions = createActionQueue();
+  let signaturePlaying = false;
+  const offSignature = transport.onButton?.((event) => {
+    if (signaturePlaying || !currentModel || !shouldPlaySignature(event, runtime.pet)) return;
+    signaturePlaying = true;
+    actions.run(async () => {
+      animator.pause();
+      try { await playSignatureAnimation({ transport, model: currentModel }); }
+      finally { animator.resume(); }
+    }).catch(() => {}).finally(() => { signaturePlaying = false; });
+  });
   const dashboardServer = dashboard
     ? await startDashboardServer({
         host: dashboardHost,
@@ -185,6 +226,8 @@ export async function main({
   const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    offSignature?.();
+    animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
   };
@@ -194,25 +237,41 @@ export async function main({
 
   let lastHour = new Date().getHours();
   async function tick() {
-    const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
-    const selected = usageForDisplay(snapshot, lastKnownUsage);
-    lastKnownUsage = selected.lastKnown;
-    await pollUsageOnce().catch(() => {});
-    const usage = mergeUsage(selected.usage, loadRateLimits());
-    const weather = await loadWeatherSnapshot(weatherClient, config);
-    const room = transport.feedSensor();
-    const pet = await runOneTick({ usage, weather, room, statePath, framePath, transport });
-    runtime = { usage, weather, room, pet };
-    const hour = new Date().getHours();
-    if (hour !== lastHour) {
-      lastHour = hour;
-      transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
-    }
-    console.log(`wrote ${framePath}`);
+    await actions.run(async () => {
+      animator.pause();
+      try {
+        const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
+        const selected = usageForDisplay(snapshot, lastKnownUsage);
+        lastKnownUsage = selected.lastKnown;
+        await pollUsageOnce().catch(() => {});
+        const usage = mergeUsage(selected.usage, loadRateLimits());
+        const weather = await loadWeatherSnapshot(weatherClient, config);
+        const room = transport.feedSensor();
+        const pet = await runOneTick({
+          usage,
+          weather,
+          room,
+          statePath,
+          framePath,
+          transport,
+          onRenderModel: (model) => { currentModel = model; },
+        });
+        runtime = { usage, weather, room, pet };
+        const hour = new Date().getHours();
+        if (hour !== lastHour) {
+          lastHour = hour;
+          transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+        }
+        console.log(`wrote ${framePath}`);
+      } finally {
+        animator.resume();
+      }
+    });
   }
 
   await tick();
   if (once) return;
+  animator.start();
 
   while (!stopped) {
     await new Promise((resolve) => {
@@ -365,7 +424,7 @@ async function loadWeatherSnapshot(weatherClient, config) {
 }
 
 function hasKeyPress(events) {
-  return events.some((event) => event?.key === "KEY");
+  return events.some((event) => event?.key === "KEY" && event?.kind === "short");
 }
 
 function evolutionContext({ pet, weather, room, now }) {

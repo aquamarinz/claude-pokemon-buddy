@@ -2,11 +2,11 @@
 //
 // Builds on B4's ES8311 audio with host-driven sounds: the host sends a PLAY
 // frame (type 0x03, payload[0] = sound id) so it can chime the buddy on its own
-// events — an evolution fanfare and a top-of-hour chime — while a KEY press
-// still plays the local "Bui!" idle cry. Three chiptune voices are synthesized
-// on boot; PLAY just selects which one. The codec's I2C control
-// bus is shared with the SHTC3 (same SDA13/SCL14) via codec_board (see
-// codec_init.c _i2c_init reuse). Everything below is unchanged from B3:
+// events, and sends CONFIG (type 0x04, payload[0] = sound id) to set the local
+// KEY-press cry. Three system sounds plus 18 species cries are synthesized on
+// boot; PLAY selects a sound immediately while KEY plays the active cry.
+// The codec's I2C control bus is shared with the SHTC3 (same SDA13/SCL14)
+// via codec_board (see codec_init.c _i2c_init reuse).
 //
 // B3 added the device -> host uplink: periodic SHTC3 room temp/humidity (SENSOR
 // frames) and KEY/BOOT button events (BUTTON frames). Wire format matches host
@@ -15,6 +15,8 @@
 //   frame = [0xA5][type][seq][len_lo][len_hi][payload...][crc32 LE]
 //           crc32 covers header+payload (first 5+len bytes), poly 0xEDB88320.
 //   FRAME  0x01 (in)  = [x u16][y u16][w u16][h u16][RLE bytes]   -> blit
+//   PLAY   0x03 (in)  = [sound_id]                                -> play now
+//   CONFIG 0x04 (in)  = [sound_id]                                -> set KEY cry
 //   ACK    0x84 (out) = [acked_seq]                               (host matches seq)
 //   SENSOR 0x83 (out) = [temp i16 LE, units 0.1C][humidity u8 %]  (seq ignored by host)
 //   BUTTON 0x82 (out) = [key_id][kind_id]   key 1=KEY/2=BOOT, kind 1=short/2=long/3=double
@@ -26,6 +28,8 @@
 #include <assert.h>
 #include <math.h>
 #include <string.h>
+
+#include <atomic>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -42,7 +46,7 @@
 #include "multi_button.h"
 #include "codec_bsp.h"
 
-static const char *TAG = "buddy-b4";
+static const char *TAG = "buddy-b5";
 
 // ---- Panel + sensor (constructed during C++ static init, on the main task) -
 static constexpr int W = 400;
@@ -89,15 +93,21 @@ static QueueHandle_t     btn_queue = nullptr;     // button events -> button_tas
 // ---- Audio (ES8311; built in app_main like the I2C sensor) -----------------
 static constexpr int AUDIO_SR = 16000;            // sample rate (Hz)
 static constexpr int AUDIO_CH = 2;                // stereo frames (L=R into mono spk)
-// Sound ids — also the PLAY frame payload[0] the host sends.
+// Sound ids carried in PLAY/CONFIG payload[0].
 static constexpr uint8_t SND_BUI    = 0;          // idle cry (KEY press)
 static constexpr uint8_t SND_EVOLVE = 1;          // evolution fanfare (host PLAY)
 static constexpr uint8_t SND_HOUR   = 2;          // top-of-hour chime (host PLAY)
-static constexpr int     SND_COUNT  = 3;
+// One note: sweep f0 -> f1 over `ms`. f0 == 0 means a silent gap.
+struct Note { float f0, f1; int ms; };
+#include "species_cries.inc"
+static constexpr uint8_t T_CONFIG = 0x04;          // host -> device: set active KEY cry
+static constexpr int SND_COUNT = SND_SPECIES_BASE + SND_SPECIES_COUNT; // 3 + 18 = 21
+static_assert(SND_SPECIES_BASE == 3, "species ids must start after BUI/EVOLVE/HOUR");
 static CodecPort    *g_codec = nullptr;
 static int16_t      *g_snd[SND_COUNT] = {};       // synthesized PCM per sound (PSRAM)
 static size_t        g_snd_bytes[SND_COUNT] = {};
 static QueueHandle_t audio_queue = nullptr;       // sound id -> audio_task
+static std::atomic<uint8_t> g_active_cry{SND_BUI};  // KEY-press cry; set by host CONFIG
 static void play_sound(uint8_t id);               // fwd decl (used by parse_frames)
 
 static uint32_t crc32(const uint8_t *b, size_t n)
@@ -186,6 +196,8 @@ static void parse_frames(void)
                 if (handle_frame_payload(f + 5, len)) send_ack(f[2]);   // ACK on success
             } else if (f[1] == T_PLAY && len >= 1) {
                 play_sound(f[5]);                  // payload[0] = sound id; fire-and-forget (no ACK)
+            } else if (f[1] == T_CONFIG && len >= 1) {
+                if (f[5] < SND_COUNT) g_active_cry.store(f[5]); // 非法 id 拒绝, 不改值
             }
             pos += frameLen;
         } else {
@@ -243,12 +255,9 @@ static void button_task(void *arg)
     }
 }
 
-// One note: sweep f0 -> f1 over `ms`. f0 == 0 means a silent gap.
-struct Note { float f0, f1; int ms; };
-
 // Render a square-wave note sequence into a fresh 16-bit stereo (L=R) PSRAM
 // buffer. Each note gets a 5ms attack + linear decay so the chiptune voice has
-// shape without clicks. (Same synthesis as B4's chirp, now reused for 3 sounds.)
+// shape without clicks. (Same synthesis as B4's chirp, now reused for all sounds.)
 static void synth_tone(const Note *notes, int count, int16_t **out, size_t *bytes)
 {
     int frames = 0;
@@ -280,8 +289,8 @@ static void synth_tone(const Note *notes, int count, int16_t **out, size_t *byte
     }
 }
 
-// Synthesize all three voices once at boot. Bui = two rising syllables (idle
-// cry). Evolve = a rising C-major arpeggio landing on a held high C (fanfare).
+// Synthesize all system voices and species cries once at boot. Bui = two rising
+// syllables. Evolve = a rising C-major arpeggio landing on a held high C.
 // Hour = two short A5 beeps (a discreet chime).
 static void synth_all(void)
 {
@@ -292,6 +301,13 @@ static void synth_all(void)
     synth_tone(BUI,    3, &g_snd[SND_BUI],    &g_snd_bytes[SND_BUI]);
     synth_tone(EVOLVE, 4, &g_snd[SND_EVOLVE], &g_snd_bytes[SND_EVOLVE]);
     synth_tone(HOUR,   3, &g_snd[SND_HOUR],   &g_snd_bytes[SND_HOUR]);
+    size_t free_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    for (int i = 0; i < SND_SPECIES_COUNT; i++)
+        synth_tone(SPECIES_CRIES[i].notes, SPECIES_CRIES[i].count,
+                   &g_snd[SND_SPECIES_BASE + i], &g_snd_bytes[SND_SPECIES_BASE + i]);
+    ESP_LOGI(TAG, "synth: %d species cries, spiram %u -> %u",
+             SND_SPECIES_COUNT, (unsigned)free_before,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 static void play_sound(uint8_t id)
@@ -325,7 +341,7 @@ static void btn_emit(uint8_t key_id, uint8_t kind_id)
     xQueueSend(btn_queue, &ev, 0);                 // drop if full; events are advisory
 }
 
-static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY,  KIND_SHORT); play_sound(SND_BUI); }
+static void on_key_single(Button *)  { btn_emit(KEY_ID_KEY, KIND_SHORT); play_sound(g_active_cry.load()); }
 static void on_key_double(Button *)  { btn_emit(KEY_ID_KEY,  KIND_DOUBLE); }
 static void on_key_long(Button *)    { btn_emit(KEY_ID_KEY,  KIND_LONG);   }
 static void on_boot_single(Button *) { btn_emit(KEY_ID_BOOT, KIND_SHORT);  }
@@ -402,7 +418,7 @@ extern "C" void app_main(void)
 
     // Audio last: codec_board's init_codec reuses g_bus's I2C bus for the ES8311
     // control port (codec_init.c _i2c_init), so g_bus must exist first. KEY
-    // single-click then plays the synthesized "Bui!" chirp through the speaker.
+    // single-click then plays the active species cry selected by host CONFIG.
     audio_queue = xQueueCreate(4, sizeof(uint8_t));
     assert(audio_queue);
     g_codec = new CodecPort("S3_RLCD_4_2");
@@ -410,5 +426,5 @@ extern "C" void app_main(void)
     g_codec->set_volume(80);
     synth_all();
     xTaskCreate(audio_task, "audio", 4096, nullptr, 4, nullptr);
-    ESP_LOGI(TAG, "B5: codec up; 3 sounds (KEY=bui, host PLAY=evolve/hour)");
+    ESP_LOGI(TAG, "B5: codec up; 3 system + 18 species sounds (KEY=active cry, PLAY=evolve/hour)");
 }

@@ -41,8 +41,8 @@ test("one tick produces frame and advances state", async () => {
 
   assert.equal(existsSync(framePath), true);
   assert.equal(existsSync(statePath), true);
-  assert.ok(state.level >= 1);
-  assert.ok(state.expGain > 0);
+  assert.equal(state.level, 1);
+  assert.equal(state.expGain, 0);
   assert.equal(state.lastGrowthDay, "2026-05-30");
 });
 
@@ -72,9 +72,9 @@ test("same-day usage growth credits only new token progress", async () => {
     today: "2026-05-30",
   });
 
-  assert.equal(first.expGain, 2);
+  assert.equal(first.expGain, 0);
   assert.equal(second.expGain, 2);
-  assert.equal(second.exp, 4);
+  assert.equal(second.exp, 2);
   assert.equal(second.todayCreditedExp, 4);
   assert.equal(second.todayCreditedBond, 4);
 });
@@ -229,6 +229,57 @@ test("cross-day settlement freezes yesterday once and stays idempotent", async (
   assert.equal(first.todayCreditedBond, 0);
   assert.equal(second.lastSettled, "2026-05-30");
   assert.equal(second.streak, 1);
+});
+
+test("runOneTick sets the active cry id for the pet's species", async () => {
+  const statePath = join("out", "test-cry-state.json");
+  const framePath = join("out", "test-cry-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+
+  const cryCalls = [];
+  const mock = createMockTransport({ framePath });
+  mock.setActiveCry = (id) => cryCalls.push(id);
+
+  await runOneTick({
+    usage: usageWithTokens(1_000),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock,
+    today: "2026-05-30",
+  });
+
+  // 无 hatched 存档 → ensurePet 出 eevee → cryAudioId=3
+  assert.ok(cryCalls.includes(3));
+});
+
+test("runOneTick reports the same render model shape used for buddy frames", async () => {
+  const statePath = join("out", "test-render-model-state.json");
+  const framePath = join("out", "test-render-model-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+
+  const models = [];
+  await runOneTick({
+    usage: usageWithTokens(1_000),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-30",
+    onRenderModel: (model) => models.push(model),
+  });
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0].buddy.species, "eevee");
+  assert.ok(models[0].buddy.spriteGray instanceof Uint8Array);
+  assert.equal(typeof models[0].buddy.bubble, "string");
+  assert.equal(Object.hasOwn(models[0].buddy, "animPhase"), false);
 });
 
 function usageWithTokens(todayTokens) {

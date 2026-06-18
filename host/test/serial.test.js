@@ -241,6 +241,16 @@ test("write callback errors trigger reconnect instead of rejecting", async () =>
   transport.close();
 });
 
+test("setActiveCry writes a CONFIG frame with the sound id", () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port });
+  transport.setActiveCry(7);
+  const frame = decodeFrame(port.writes.at(-1));
+  assert.equal(frame.type, T.CONFIG);
+  assert.equal(frame.seq, 0);
+  assert.deepEqual([...frame.payload], [7]);
+});
+
 class FakePort extends EventEmitter {
   writes = [];
   closed = false;

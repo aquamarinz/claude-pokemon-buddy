@@ -45,6 +45,46 @@ test("night RTC plus KEY evolves ready Eevee to Umbreon", async () => {
   assert.equal(state.pendingCandidates, undefined);
 });
 
+test("long-press KEY does not trigger evolution (short-only)", async () => {
+  const statePath = join("out", "test-key-long-noevolve-state.json");
+  const framePath = join("out", "test-key-long-noevolve-frame.png");
+  writeState(statePath, { bond: 160, readyToEvolve: true });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 21),
+    mock: mockPressingKey(framePath, { t: 21, h: 45 }, "long"),
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "eevee");
+  assert.equal(state.readyToEvolve, true);
+  assert.equal(state.pendingCandidates, undefined);
+});
+
+test("double-press KEY does not trigger evolution (short-only)", async () => {
+  const statePath = join("out", "test-key-double-noevolve-state.json");
+  const framePath = join("out", "test-key-double-noevolve-frame.png");
+  writeState(statePath, { bond: 160, readyToEvolve: true });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 21),
+    mock: mockPressingKey(framePath, { t: 21, h: 45 }, "double"),
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "eevee");
+  assert.equal(state.readyToEvolve, true);
+  assert.equal(state.pendingCandidates, undefined);
+});
+
 test("KEY stores pending candidates when multiple branches are eligible", async () => {
   const statePath = join("out", "test-pending-evolve-state.json");
   const framePath = join("out", "test-pending-evolve-frame.png");
@@ -215,11 +255,11 @@ function writeState(statePath, overrides) {
   );
 }
 
-function mockPressingKey(framePath, sensor = { t: 21, h: 45 }) {
+function mockPressingKey(framePath, sensor = { t: 21, h: 45 }, kind = "short") {
   const mock = createMockTransport({ framePath, sensor });
   const feedSensor = mock.feedSensor;
   mock.feedSensor = () => {
-    mock.injectButton("KEY", "short");
+    mock.injectButton("KEY", kind);
     return feedSensor();
   };
   return mock;

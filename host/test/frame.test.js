@@ -1,7 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { buddyBold } from "../src/render/layout.js";
 import { grayToBitmap, renderFrame } from "../src/render/frame.js";
+
+test("buddyBold: all species render thin by default", () => {
+  for (const sp of [
+    "eevee", "vaporeon", "jolteon", "flareon", "espeon", "umbreon",
+    "leafeon", "glaceon", "sylveon", "bulbasaur", "ivysaur", "venusaur",
+    "charmander", "charmeleon", "charizard", "squirtle", "wartortle", "blastoise",
+    undefined,
+  ]) {
+    assert.equal(buddyBold(sp), false, `${sp} should render thin`);
+  }
+});
 
 test("renderFrame returns 400x300 png and 1bpp bitmap", async () => {
   const model = {
@@ -47,6 +59,22 @@ test("grayToBitmap hard-thresholds canvas gray without Bayer pattern", () => {
   assert.equal(countOnPixels(bitmap, 0, 0, 8, 8), 0);
 });
 
+test("bold dilation adds ink versus thin for the same sprite", async () => {
+  const spriteGray = singleInkPixelSprite(16, 16);
+  const { drawSprite, BUDDY_SPRITE_SLOT } = await import("../src/render/layout.js");
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const ink = (bold) => {
+    const c = createCanvas(BUDDY_SPRITE_SLOT, BUDDY_SPRITE_SLOT);
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, BUDDY_SPRITE_SLOT, BUDDY_SPRITE_SLOT);
+    g.fillStyle = "#000";
+    drawSprite(g, spriteGray, { x: 0, y: 0, maxSize: BUDDY_SPRITE_SLOT, srcW: 16, srcH: 16, bold });
+    const d = g.getImageData(0, 0, BUDDY_SPRITE_SLOT, BUDDY_SPRITE_SLOT).data;
+    let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n += 1; return n;
+  };
+  assert.ok(ink(true) > ink(false), "bold dilation must add ink");
+});
+
 function countOnPixels(bitmap, x, y, w, h) {
   const rowBytes = Math.ceil(bitmap.w / 8);
   let count = 0;
@@ -58,4 +86,10 @@ function countOnPixels(bitmap, x, y, w, h) {
   }
 
   return count;
+}
+
+function singleInkPixelSprite(w, h) {
+  const spriteGray = new Uint8Array(w * h).fill(255);
+  spriteGray[Math.floor(h / 2) * w + Math.floor(w / 2)] = 0;
+  return spriteGray;
 }

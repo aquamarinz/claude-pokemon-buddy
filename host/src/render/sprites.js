@@ -80,6 +80,36 @@ export function thresholdSpriteGray(gray, w, h, { threshold = SPRITE_CRISP_THRES
   return out;
 }
 
+// Morphological dilation of ink (value 0) on a 1-bit-valued buffer
+// (0 = ink, 255 = paper). Returns a NEW buffer; never mutates input.
+// Each radius step grows ink into its 4-neighbours so thin 1px strokes read as
+// solid on the 1-bit LCD instead of breaking into dashes. Expects a thresholded
+// (0/255) buffer; non-zero, non-255 values are treated as paper.
+export function dilate1bpp(gray, w, h, radius = 1) {
+  if (!(gray instanceof Uint8Array) || gray.length !== w * h) {
+    throw new Error("dilate1bpp: gray buffer size does not match dimensions");
+  }
+  let src = gray;
+  const steps = Math.max(0, Math.floor(radius)); // 归一化，防小数多膨胀一圈
+  for (let r = 0; r < steps; r += 1) {
+    const out = new Uint8Array(src.length).fill(255);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const i = y * w + x;
+        const ink =
+          src[i] === 0 ||
+          (x > 0 && src[i - 1] === 0) ||
+          (x < w - 1 && src[i + 1] === 0) ||
+          (y > 0 && src[i - w] === 0) ||
+          (y < h - 1 && src[i + w] === 0);
+        out[i] = ink ? 0 : 255;
+      }
+    }
+    src = out;
+  }
+  return src === gray ? new Uint8Array(gray) : src; // radius 0 → 非 mutate 拷贝
+}
+
 async function loadPngSprite(path, size) {
   try {
     const image = await loadImage(path);
