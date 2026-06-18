@@ -14,10 +14,14 @@ const MONO = '"Zpix"';
 const CJK = '"Zpix"';
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MOOD_ZH = { shocked: "震惊", fainted: "力竭", strained: "吃力", focused: "专注", happy: "开心" };
-export const BUDDY_SPRITE_SLOT = 136;
+export const BUDDY_SPRITE_SLOT = 156;
 export const BUDDY_SPRITE_SCALE = 3;
 export const BUDDY_BOB = [0, -1, -2, -1]; // 呼吸浮动（周期 4，幅度 ≤2px）
-const BUDDY_SPRITE_TOP = 50;
+const BUDDY_SPRITE_TOP = 46;
+const BOLD_LINE_SPECIES = new Set();
+export function buddyBold(species) {
+  return BOLD_LINE_SPECIES.has(species ?? "eevee");
+}
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
 const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
@@ -128,14 +132,14 @@ function drawBuddyPanel(g, model) {
   const hop = Number.isInteger(buddy.hop) ? buddy.hop : 0;
 
   drawBubble(g, W - 8, 11, buddy.bubble ?? EEVEE_IDLE_CRY);
-  drawShadow(g, panelX + panelW / 2, 186);
+  drawShadow(g, panelX + panelW / 2, 200);
   drawSprite(g, buddy.spriteGray, {
     x: panelX + Math.floor((panelW - BUDDY_SPRITE_SLOT) / 2),
     y: BUDDY_SPRITE_TOP + bob - hop,
     maxSize: BUDDY_SPRITE_SLOT,
     srcW: buddy.spriteW,
     srcH: buddy.spriteH,
-    bold: true,
+    bold: buddyBold(buddy.species),
   });
   if (hasAnimPhase) {
     drawIdleAccent(g, buddy.species ?? "eevee", {
@@ -149,8 +153,8 @@ function drawBuddyPanel(g, model) {
 
   g.fillStyle = INK;
   g.font = `800 12px ${MONO}`;
-  g.fillRect(panelX + 14, 205, 7, 7);
-  g.fillText(MOOD_ZH[buddy.mood] ?? buddy.mood ?? "专注", panelX + 27, 213);
+  g.fillRect(panelX + 14, 219, 7, 7);
+  g.fillText(MOOD_ZH[buddy.mood] ?? buddy.mood ?? "专注", panelX + 27, 227);
 
   const level = Math.max(1, Number(buddy.level ?? 1));
   const hearts = heartCount(buddy.bond ?? 0);
@@ -158,27 +162,27 @@ function drawBuddyPanel(g, model) {
 
   // 等级 + 连续天数（24px = Zpix 整数倍，清晰）
   g.font = `800 24px ${MONO}`;
-  g.fillText(`Lv.${level}`, panelX + 14, 245);
-  drawFlame(g, panelX + 104, 229);
-  g.fillText(`${streak}天`, panelX + 122, 245);
+  g.fillText(`Lv.${level}`, panelX + 14, 253);
+  drawFlame(g, panelX + 104, 237);
+  g.fillText(`${streak}天`, panelX + 122, 253);
 
   // 经验条
-  drawMeter(g, panelX + 14, 255, 156, 11, clampPct(buddy.expPct ?? 0), { striped: false });
+  drawMeter(g, panelX + 14, 262, 156, 11, clampPct(buddy.expPct ?? 0), { striped: false });
 
   // 亲密度
   g.font = `700 12px ${CJK}`;
-  g.fillText("亲密度", panelX + 14, 288);
-  drawHearts(g, panelX + 58, 277, hearts);
+  g.fillText("亲密度", panelX + 14, 296);
+  drawHearts(g, panelX + 58, 284, hearts);
 }
 
 function drawSpeciesLine(g, panelX, panelW, buddy) {
   const cx = panelX + panelW / 2;
   g.font = `800 12px ${CJK}`;
   g.textAlign = "left"; // Zpix 12px 过 1-bit 需整数左边缘, 自算 center 再 round (避免半像素碎裂)
-  const centered = (t) => g.fillText(t, Math.round(cx - g.measureText(t).width / 2), 198);
+  const centered = (t) => g.fillText(t, Math.round(cx - g.measureText(t).width / 2), 212);
   if (buddy.readyToEvolve) {
     g.fillStyle = INK;
-    g.fillRect(panelX + 18, 184, panelW - 36, 18);
+    g.fillRect(panelX + 18, 198, panelW - 36, 18);
     g.fillStyle = PAPER;
     centered("▲ 按 KEY 进化！");
   } else {

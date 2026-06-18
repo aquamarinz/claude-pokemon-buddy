@@ -48,16 +48,17 @@ function gem(g, box, phase) { // 超能：额宝石闪 + 绕行光点
   dot(g, box.x + box.w * 0.5, box.y + box.h * 0.16); // 宝石
   if (p % 2 === 0) dot(g, box.x + box.w * 0.5 + 1, box.y + box.h * 0.16 - 1);
   const ang = (p / 4) * Math.PI * 2;
-  dot(g, box.x + box.w * 0.5 + Math.cos(ang) * box.w * 0.5,
-        box.y + box.h * 0.5 + Math.sin(ang) * box.h * 0.42); // 绕行点
+  dot(g, box.x + box.w * 0.5 + Math.cos(ang) * box.w * 0.32,
+        box.y + box.h * 0.5 + Math.sin(ang) * box.h * 0.30); // 绕行点（半径收窄，始终落在精灵体上）
 }
 
-function rings(g, box, phase) { // 恶：环纹明灭光圈
+function rings(g, box, phase) { // 恶：环纹呼吸光圈（每拍都画，半径轻微脉动，避免一闪一灭）
   const p = P(phase);
-  if (p === 1 || p === 2) {
-    const cx = box.x + box.w * 0.5, cy = box.y + box.h * 0.5;
-    g.beginPath(); g.ellipse(cx, cy, box.w * 0.42 + p, box.h * 0.42 + p, 0, 0, Math.PI * 2); g.stroke();
-  }
+  const cx = box.x + box.w * 0.5, cy = box.y + box.h * 0.5;
+  const grow = [0, 2, 3, 2][p]; // 0→2→3→2 呼吸，连续不断
+  g.beginPath();
+  g.ellipse(cx, cy, box.w * 0.42 + grow, box.h * 0.42 + grow, 0, 0, Math.PI * 2);
+  g.stroke();
 }
 
 function crystals(g, box, phase) { // 冰：冰晶小十字

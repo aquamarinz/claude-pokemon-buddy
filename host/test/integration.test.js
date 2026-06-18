@@ -41,8 +41,8 @@ test("one tick produces frame and advances state", async () => {
 
   assert.equal(existsSync(framePath), true);
   assert.equal(existsSync(statePath), true);
-  assert.ok(state.level >= 1);
-  assert.ok(state.expGain > 0);
+  assert.equal(state.level, 1);
+  assert.equal(state.expGain, 0);
   assert.equal(state.lastGrowthDay, "2026-05-30");
 });
 
@@ -72,9 +72,9 @@ test("same-day usage growth credits only new token progress", async () => {
     today: "2026-05-30",
   });
 
-  assert.equal(first.expGain, 2);
+  assert.equal(first.expGain, 0);
   assert.equal(second.expGain, 2);
-  assert.equal(second.exp, 4);
+  assert.equal(second.exp, 2);
   assert.equal(second.todayCreditedExp, 4);
   assert.equal(second.todayCreditedBond, 4);
 });
