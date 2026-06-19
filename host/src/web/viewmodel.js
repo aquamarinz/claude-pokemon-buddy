@@ -26,6 +26,7 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
       todayTokens: usage.todayTokens,
       streak: usage.streak,
       modelled: usage.modelled,
+      rateStale: Boolean(usage.rateStale),
     },
     weather,
     room: {

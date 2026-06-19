@@ -48,3 +48,20 @@ test("maps host state to dashboard view (read-only)", () => {
   assert.equal(v.secrets.lockedCount, 11);
   assert.equal(v.difficulty, "NORMAL · 锁定");
 });
+
+test("forwards rateStale into the dashboard usage block", () => {
+  const base = {
+    pet: { species: "eevee", level: 1, exp: 0, bond: 0, mood: "happy", nature: "—", iv: [], characteristic: "—", badges: [], readyToEvolve: false },
+    weather: { cond: "多云", temp: 19 },
+    sensors: { roomT: null, roomH: null },
+    journey: [],
+    secrets: { discovered: [], total: 12 },
+    config: { name: "x", quietHours: { start: 22, end: 8 }, volume: 70, lat: 0, lon: 0 },
+  };
+
+  const stale = toDashboardView({ ...base, usage: { p5h: 72, pweek: 41, rateStale: true } });
+  assert.equal(stale.usage.rateStale, true);
+
+  const fresh = toDashboardView({ ...base, usage: { p5h: 72, pweek: 41 } });
+  assert.equal(fresh.usage.rateStale, false);
+});
