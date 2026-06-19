@@ -7,7 +7,7 @@ import { cryFor } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
-import { settleDays } from "./pet/settlement.js";
+import { buildUsedDays, settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
 import { runOnboarding } from "./pet/onboarding.js";
 import { createBuddyAnimator } from "./render/buddy-animator.js";
@@ -91,17 +91,8 @@ export async function runOneTick({
   const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
-  const closedUsageDays = new Set();
-  if (
-    pet.lastGrowthDay &&
-    pet.lastGrowthDay < today &&
-    ((pet.todayCreditedExp ?? 0) > 0 || (pet.todayCreditedBond ?? 0) > 0)
-  ) {
-    closedUsageDays.add(pet.lastGrowthDay);
-  }
-
   pet = settleDays(pet, today, {
-    usedDays: closedUsageDays,
+    usedDays: buildUsedDays(pet, today, usage),
   });
 
   pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });

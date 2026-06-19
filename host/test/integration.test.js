@@ -282,6 +282,117 @@ test("runOneTick reports the same render model shape used for buddy frames", asy
   assert.equal(Object.hasOwn(models[0].buddy, "animPhase"), false);
 });
 
+test("offline days with real ccusage usage are not punished as missed (H1)", async () => {
+  const statePath = join("out", "test-h1-active-state.json");
+  const framePath = join("out", "test-h1-active-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 100,
+      streak: 5,
+      shield: 0,
+      lastSettled: "2026-05-27",
+      lastGrowthDay: null,
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      nature: "Brave",
+      iv: [1, 2, 3, 4, 5, 6],
+      characteristic: "Likes to run",
+    }),
+  );
+
+  const state = await runOneTick({
+    usage: {
+      ok: true,
+      p5h: 12,
+      pweek: 34,
+      todayCost: 1,
+      todayTokens: 1_000,
+      modelled: true,
+      weekTokens: 5_000,
+      activeDays: [
+        "2026-05-26",
+        "2026-05-27",
+        "2026-05-28",
+        "2026-05-29",
+        "2026-05-30",
+        "2026-05-31",
+      ],
+    },
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-31",
+  });
+
+  // window 05-28..05-30 all active -> streak +3 (settleDays only); bond not decayed.
+  // applyDailyGrowth then adds firstEver bond +4 (1000 tokens) -> bond 104.
+  assert.equal(state.streak, 8);
+  assert.equal(state.bond, 104);
+});
+
+test("genuine inactive day within ccusage range still decays", async () => {
+  const statePath = join("out", "test-h1-inactive-state.json");
+  const framePath = join("out", "test-h1-inactive-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 100,
+      streak: 5,
+      shield: 0,
+      lastSettled: "2026-05-27",
+      lastGrowthDay: null,
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      nature: "Brave",
+      iv: [1, 2, 3, 4, 5, 6],
+      characteristic: "Likes to run",
+    }),
+  );
+
+  const state = await runOneTick({
+    usage: {
+      ok: true,
+      p5h: 12,
+      pweek: 34,
+      todayCost: 1,
+      todayTokens: 0,
+      modelled: true,
+      weekTokens: 0,
+      activeDays: ["2026-05-27", "2026-05-28", "2026-05-30", "2026-05-31"],
+    },
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-31",
+  });
+
+  // 05-28 used (+1), 05-29 absent -> streak reset to 0 + bond -3, 05-30 used (+1).
+  // todayTokens 0 -> no growth bond change.
+  assert.equal(state.streak, 1);
+  assert.equal(state.bond, 97);
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,
