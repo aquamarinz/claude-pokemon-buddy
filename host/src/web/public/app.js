@@ -95,8 +95,9 @@ function render(view) {
 
 function renderUsage(usage) {
   setText("usage-modelled", usage.modelled ? "LOCAL/est" : "--");
-  setText("usage-p5h", formatPct(usage.p5h));
-  setText("usage-pweek", formatPct(usage.pweek));
+  const staleSuffix = usage.rateStale ? " 旧" : "";
+  setText("usage-p5h", usage.p5h == null ? formatPct(usage.p5h) : `${formatPct(usage.p5h)}${staleSuffix}`);
+  setText("usage-pweek", usage.pweek == null ? formatPct(usage.pweek) : `${formatPct(usage.pweek)}${staleSuffix}`);
   setText("usage-today", `${formatMoney(usage.todayCost)} · ${formatTokens(usage.todayTokens)}`);
   setText("usage-streak", usage.streak == null ? "--" : `${usage.streak}d`);
 }
