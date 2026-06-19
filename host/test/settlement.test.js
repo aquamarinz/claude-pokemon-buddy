@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { settleDays } from "../src/pet/settlement.js";
+import { settleDays, settlementWindow, activeDaysFromUsage, buildUsedDays } from "../src/pet/settlement.js";
 
 test("settles each missed day once and rerun for same today is idempotent", () => {
   const pet = { bond: 100, lastSettled: "2026-05-25", streak: 5, shield: 1 };
@@ -54,4 +54,66 @@ test("caps catch-up at maxCatchupDays", () => {
 
   assert.equal(out.bond, 194);
   assert.equal(out.lastSettled, "2026-01-05");
+});
+
+test("settlementWindow lists capped, exclusive days between lastSettled and today", () => {
+  assert.deepEqual(settlementWindow("2026-05-27", "2026-05-31"), [
+    "2026-05-28",
+    "2026-05-29",
+    "2026-05-30",
+  ]);
+  assert.deepEqual(settlementWindow("2026-05-30", "2026-05-31"), []);
+  assert.deepEqual(settlementWindow(null, "2026-05-31"), []);
+});
+
+test("activeDaysFromUsage returns null when history is unavailable", () => {
+  assert.equal(activeDaysFromUsage(undefined), null);
+  assert.equal(activeDaysFromUsage({ ok: false }), null);
+  assert.equal(activeDaysFromUsage({ ok: true }), null);
+  assert.equal(activeDaysFromUsage({ ok: true, activeDays: [] }), null);
+});
+
+test("buildUsedDays marks ccusage-active window days as used", () => {
+  const pet = { lastSettled: "2026-05-27", lastGrowthDay: null };
+  const usage = {
+    ok: true,
+    activeDays: ["2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30"],
+  };
+  const used = buildUsedDays(pet, "2026-05-31", usage);
+  assert.deepEqual([...used].sort(), ["2026-05-28", "2026-05-29", "2026-05-30"]);
+});
+
+test("buildUsedDays decays genuine inactive days within ccusage's known range", () => {
+  const pet = { lastSettled: "2026-05-27", lastGrowthDay: null };
+  const usage = { ok: true, activeDays: ["2026-05-27", "2026-05-28", "2026-05-30"] };
+  const used = buildUsedDays(pet, "2026-05-31", usage);
+  // 2026-05-29 absent within known range -> NOT used (will decay)
+  assert.equal(used.has("2026-05-28"), true);
+  assert.equal(used.has("2026-05-29"), false);
+  assert.equal(used.has("2026-05-30"), true);
+});
+
+test("buildUsedDays fails open for days before ccusage's earliest record", () => {
+  const pet = { lastSettled: "2026-05-27", lastGrowthDay: null };
+  const usage = { ok: true, activeDays: ["2026-05-30"] }; // earliest known = 05-30
+  const used = buildUsedDays(pet, "2026-05-31", usage);
+  // 05-28, 05-29 predate ccusage knowledge -> fail-open (used); 05-30 active (used)
+  assert.deepEqual([...used].sort(), ["2026-05-28", "2026-05-29", "2026-05-30"]);
+});
+
+test("buildUsedDays fails open entirely when usage history is unavailable", () => {
+  const pet = { lastSettled: "2026-05-27", lastGrowthDay: null };
+  const used = buildUsedDays(pet, "2026-05-31", { ok: false });
+  assert.deepEqual([...used].sort(), ["2026-05-28", "2026-05-29", "2026-05-30"]);
+});
+
+test("buildUsedDays counts the in-progress last growth day when it earned", () => {
+  const pet = {
+    lastSettled: "2026-05-29",
+    lastGrowthDay: "2026-05-30",
+    todayCreditedExp: 4,
+    todayCreditedBond: 4,
+  };
+  const used = buildUsedDays(pet, "2026-05-31", { ok: false });
+  assert.equal(used.has("2026-05-30"), true);
 });
