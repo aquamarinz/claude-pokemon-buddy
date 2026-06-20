@@ -393,6 +393,49 @@ test("genuine inactive day within ccusage range still decays", async () => {
   assert.equal(state.bond, 97);
 });
 
+test("render model carries the pet's streak from state, not a missing field", async () => {
+  const statePath = join("out", "test-model-streak-state.json");
+  const framePath = join("out", "test-model-streak-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 5,
+      shield: 0,
+      lastSettled: "2026-05-30",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      nature: "Brave",
+      iv: [1, 2, 3, 4, 5, 6],
+      characteristic: "Likes to run",
+    }),
+  );
+
+  const models = [];
+  await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-30",
+    onRenderModel: (m) => models.push(m),
+  });
+
+  // lastSettled === today => settlement window empty => streak unchanged at 5.
+  assert.equal(models[0].streak, 5);
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

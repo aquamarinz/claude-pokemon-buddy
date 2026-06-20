@@ -129,6 +129,7 @@ export async function runOneTick({
     now,
     weather,
     room: sensor,
+    streak: pet.streak ?? 0,
     out: {
       t: weather.temp ?? 0,
       h: weather.humidity ?? 64,
