@@ -158,13 +158,16 @@ export function makeTransport({
       if (rx.length < frameLen) return;
 
       const frameBytes = rx.slice(0, frameLen);
+      let frame;
       try {
-        handleFrame(decodeFrame(frameBytes));
-        rx = rx.slice(frameLen);
+        frame = decodeFrame(frameBytes);
       } catch {
         // Bad CRC / corrupt -> advance one byte and resync to the next MAGIC.
         rx = rx.slice(1);
+        continue;
       }
+      rx = rx.slice(frameLen); // consume BEFORE dispatch so a re-entrant read can't re-process this frame
+      handleFrame(frame);
     }
   }
 
@@ -279,13 +282,14 @@ export function makeTransport({
     pushFrame,
     playSound(soundId) {
       if (!connected) return;
-      // Fire-and-forget: the device does not ACK PLAY frames, so this bypasses
-      // the stop-and-wait pump — but an async write error still means the device
-      // vanished, so surface it to the reconnect path.
+      // Fire-and-forget: device doesn't ACK PLAY. Surface an async write error to the
+      // reconnect path, but only if it's still THIS port (a stale callback from an old
+      // port must not tear down a reconnected session).
+      const writePort = currentPort;
       try {
-        currentPort.write(
+        writePort.write(
           encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error) handleDisconnect(); },
+          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
         );
       } catch {
         handleDisconnect();
@@ -293,11 +297,11 @@ export function makeTransport({
     },
     setActiveCry(soundId) {
       if (!connected) return;
-      // Fire-and-forget CONFIG frame: device stores it as the KEY-press cry id.
+      const writePort = currentPort;
       try {
-        currentPort.write(
+        writePort.write(
           encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error) handleDisconnect(); },
+          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
         );
       } catch {
         handleDisconnect();
