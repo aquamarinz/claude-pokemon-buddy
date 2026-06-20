@@ -8,6 +8,7 @@ const ESPRESSIF_VID = "303A";
 const DEFAULT_BAUD_RATE = 115200;
 const DEFAULT_TIMEOUT_MS = 250;
 const DEFAULT_MAX_RETRIES = 3;
+const MAX_RX_PAYLOAD = 512; // firmware uplink payloads are <=255 (uint8 len); bound rejects noise/desync
 const BUTTON_KEYS = new Map([
   [1, "KEY"],
   [2, "BOOT"],
@@ -147,15 +148,22 @@ export function makeTransport({
       if (rx.length < 5) return;
 
       const len = rx[3] | (rx[4] << 8);
+      if (len > MAX_RX_PAYLOAD) {
+        // Bogus length (line noise / desync) -> drop this MAGIC byte and rescan.
+        rx = rx.slice(1);
+        continue;
+      }
+
       const frameLen = 5 + len + 4;
       if (rx.length < frameLen) return;
 
       const frameBytes = rx.slice(0, frameLen);
-      rx = rx.slice(frameLen);
       try {
         handleFrame(decodeFrame(frameBytes));
+        rx = rx.slice(frameLen);
       } catch {
-        // Drop corrupt frames and keep scanning subsequent bytes.
+        // Bad CRC / corrupt -> advance one byte and resync to the next MAGIC.
+        rx = rx.slice(1);
       }
     }
   }
@@ -271,21 +279,28 @@ export function makeTransport({
     pushFrame,
     playSound(soundId) {
       if (!connected) return;
-      // Fire-and-forget: the device plays the sound and does not ACK a PLAY
-      // frame, so this bypasses the stop-and-wait pump used for FRAMEs.
+      // Fire-and-forget: the device does not ACK PLAY frames, so this bypasses
+      // the stop-and-wait pump — but an async write error still means the device
+      // vanished, so surface it to the reconnect path.
       try {
-        currentPort.write(encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+        currentPort.write(
+          encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
+          (error) => { if (error) handleDisconnect(); },
+        );
       } catch {
-        // Ignore fire-and-forget write failures.
+        handleDisconnect();
       }
     },
     setActiveCry(soundId) {
       if (!connected) return;
       // Fire-and-forget CONFIG frame: device stores it as the KEY-press cry id.
       try {
-        currentPort.write(encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }));
+        currentPort.write(
+          encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
+          (error) => { if (error) handleDisconnect(); },
+        );
       } catch {
-        // Ignore fire-and-forget write failures.
+        handleDisconnect();
       }
     },
     onReconnect(callback) {

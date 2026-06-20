@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { decodeFrame, encodeFrame, T } from "../src/transport/proto.js";
+import { decodeFrame, encodeFrame, MAGIC, T } from "../src/transport/proto.js";
 import { findEspPort, makeTransport } from "../src/transport/serial.js";
 
 test("findEspPort returns first serial path with Espressif VID 303A", async () => {
@@ -249,6 +249,71 @@ test("setActiveCry writes a CONFIG frame with the sound id", () => {
   assert.equal(frame.type, T.CONFIG);
   assert.equal(frame.seq, 0);
   assert.deepEqual([...frame.payload], [7]);
+});
+
+test("playSound write error triggers reconnect (M8)", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  let attempts = 0;
+  port1.writeError = new Error("disconnected");
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => { attempts += 1; return port2; },
+    reconnectDelayMs: 5,
+  });
+
+  transport.playSound(2);
+  await waitFor(() => attempts === 1);
+  assert.equal(attempts, 1);
+  transport.close();
+});
+
+test("setActiveCry write error triggers reconnect (M8)", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  let attempts = 0;
+  port1.writeError = new Error("disconnected");
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => { attempts += 1; return port2; },
+    reconnectDelayMs: 5,
+  });
+
+  transport.setActiveCry(7);
+  await waitFor(() => attempts === 1);
+  assert.equal(attempts, 1);
+  transport.close();
+});
+
+test("RX recovers from a stray MAGIC with a bogus length and still parses later frames (H3)", () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port });
+  const buttons = [];
+  transport.onButton((e) => buttons.push(e));
+
+  // stray MAGIC + bogus huge length (0xFFFF), no real frame yet
+  port.emitData(Uint8Array.from([MAGIC, T.BUTTON, 0x00, 0xff, 0xff]));
+  // then a genuine BUTTON frame arrives
+  port.emitData(encodeFrame({ type: T.BUTTON, seq: 9, payload: Uint8Array.from([1, 1]) }));
+
+  assert.deepEqual(buttons, [{ key: "KEY", kind: "short" }]);
+  transport.close();
+});
+
+test("RX resyncs past a bad-CRC frame to the next valid frame (H3)", () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port });
+  const buttons = [];
+  transport.onButton((e) => buttons.push(e));
+
+  const corrupt = Uint8Array.from(encodeFrame({ type: T.BUTTON, seq: 9, payload: Uint8Array.from([1, 1]) }));
+  corrupt[corrupt.length - 1] ^= 0xff; // break the CRC
+  port.emitData(corrupt);
+  port.emitData(encodeFrame({ type: T.BUTTON, seq: 10, payload: Uint8Array.from([2, 2]) }));
+
+  // corrupt frame dropped; the valid second frame is still delivered
+  assert.deepEqual(buttons, [{ key: "BOOT", kind: "long" }]);
+  transport.close();
 });
 
 class FakePort extends EventEmitter {
