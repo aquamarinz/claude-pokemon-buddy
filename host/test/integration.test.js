@@ -436,6 +436,39 @@ test("render model carries the pet's streak from state, not a missing field", as
   assert.equal(models[0].streak, 5);
 });
 
+test("a buffered KEY-short press evolves a ready pet (H4 between-tick presses)", async () => {
+  const statePath = join("out", "test-h4-buffered-key-state.json");
+  const framePath = join("out", "test-h4-buffered-key-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1, hatched: true, species: "eevee", level: 1, exp: 0,
+      bond: 160, streak: 0, shield: 0, lastSettled: "2026-05-30", lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0, todayCreditedBond: 0, readyToEvolve: true,
+      nature: "Brave", iv: [1, 2, 3, 4, 5, 6], characteristic: "Likes to run",
+    }),
+  );
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    room: { t: 21, h: 45 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    now: new Date(2026, 4, 30, 21), // night -> eevee auto-evolves to umbreon
+    today: "2026-05-30",
+    pendingButtons: [{ key: "KEY", kind: "short" }],
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "umbreon");
+  assert.equal(state.readyToEvolve, false);
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

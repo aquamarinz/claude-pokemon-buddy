@@ -81,13 +81,14 @@ export async function runOneTick({
   personalityRng = Math.random,
   evolutionDelay,
   onRenderModel,
+  pendingButtons,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
 
   mkdirSync(dirname(statePath), { recursive: true });
   const activeTransport = transport ?? (mock ? adaptPngTransport(mock) : await transportFactory({ framePath }));
-  const buttonEvents = [];
+  const buttonEvents = Array.isArray(pendingButtons) ? [...pendingButtons] : [];
   const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
@@ -191,13 +192,16 @@ export async function main({
   let timer = null;
   let runtime = {};
   const actions = createActionQueue();
+  const buttonBuffer = [];
+  const offButtonBuffer = transport.onButton?.((event) => buttonBuffer.push(event));
   let signaturePlaying = false;
   const offSignature = transport.onButton?.((event) => {
     if (signaturePlaying || !currentModel || !shouldPlaySignature(event, runtime.pet)) return;
+    const pressModel = currentModel; // snapshot at press time; a later tick may reassign currentModel
     signaturePlaying = true;
     actions.run(async () => {
       animator.pause();
-      try { await playSignatureAnimation({ transport, model: currentModel }); }
+      try { await playSignatureAnimation({ transport, model: pressModel }); }
       finally { animator.resume(); }
     }).catch(() => {}).finally(() => { signaturePlaying = false; });
   });
@@ -209,9 +213,8 @@ export async function main({
         configPath,
         framePath,
         getRuntime: () => runtime,
-        onSettingsSaved: (value) => {
-          config = { ...config, ...value };
-        },
+        getConfig: () => config,
+        setConfig: (next) => { config = next; },
       })
     : null;
 
@@ -219,6 +222,7 @@ export async function main({
     stopped = true;
     if (timer) clearTimeout(timer);
     offSignature?.();
+    offButtonBuffer?.();
     animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
@@ -247,6 +251,7 @@ export async function main({
           framePath,
           transport,
           onRenderModel: (model) => { currentModel = model; },
+          pendingButtons: buttonBuffer.splice(0),
         });
         runtime = { usage, weather, room, pet };
         const hour = new Date().getHours();
@@ -261,15 +266,27 @@ export async function main({
     });
   }
 
-  await tick();
-  if (once) return;
+  async function runTickSafely() {
+    try {
+      await tick();
+    } catch (error) {
+      console.error("buddy tick failed; continuing:", error);
+    }
+  }
+
+  if (once) {
+    await tick(); // once mode: let errors propagate to the exit code
+    return;
+  }
+
+  await runTickSafely();
   animator.start();
 
   while (!stopped) {
     await new Promise((resolve) => {
       timer = setTimeout(resolve, intervalMs);
     });
-    if (!stopped) await tick();
+    if (!stopped) await runTickSafely();
   }
 }
 
@@ -280,15 +297,15 @@ export function startDashboardServer({
   configPath = "config.json",
   framePath = "out/frame.png",
   getRuntime = () => ({}),
-  onSettingsSaved = () => {},
+  getConfig = () => loadConfig(configPath),
+  setConfig = () => {},
 } = {}) {
-  let config = loadConfig(configPath);
-
   return startWebServer({
     host,
     port,
     framePath,
     getView: () => {
+      const config = getConfig();
       const runtime = getRuntime();
       const pet = dashboardPet(runtime.pet ?? loadState(statePath), runtime.usage);
       const view = toDashboardView({
@@ -308,9 +325,9 @@ export function startDashboardServer({
     saveSettings: (input) => {
       const result = validateSettings(input);
       if (!result.ok) throw new Error(result.error);
-      config = { ...config, ...result.value };
-      saveConfig(configPath, config);
-      onSettingsSaved(result.value);
+      const next = { ...getConfig(), ...result.value };
+      setConfig(next);
+      saveConfig(configPath, next);
       return result.value;
     },
   });
