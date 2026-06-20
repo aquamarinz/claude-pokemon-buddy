@@ -13,6 +13,13 @@ test("deriveMood maps 5h percentage thresholds and cost spike", () => {
   assert.equal(deriveMood({ p5h: 40, todayCost: 30 }), "shocked");
 });
 
+test("deriveMood treats unknown (null/undefined) utilization as neutral, not happy", () => {
+  assert.equal(deriveMood({ p5h: null, todayCost: 0 }), "focused");
+  assert.equal(deriveMood({ p5h: null, todayCost: null }), "focused");
+  assert.equal(deriveMood({ p5h: undefined, todayCost: 1 }), "focused");
+  assert.equal(deriveMood({ p5h: null, todayCost: 30 }), "shocked");
+});
+
 test("applyDailyGrowth caps EXP gain and bond gain per day", () => {
   const pet = { level: 1, exp: 90, bond: 100 };
 
