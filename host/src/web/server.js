@@ -61,6 +61,11 @@ async function routeRequest(req, res, context) {
       return;
     }
 
+    if (Object.keys(result.value).length === 0) {
+      respondJson(res, 400, { error: "no settings provided" });
+      return;
+    }
+
     await context.saveSettings(result.value);
     respondJson(res, 200, { ok: true, settings: result.value });
     return;
