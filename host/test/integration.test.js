@@ -499,6 +499,40 @@ test("growth is not credited from a ccusage day that isn't today (L3)", async ()
   assert.equal(state.expGain, 0);
 });
 
+test("a KEY long-press records care so care-gated evolutions become reachable (M7)", async () => {
+  const statePath = join("out", "test-m7-care-state.json");
+  const framePath = join("out", "test-m7-care-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1, hatched: true, species: "eevee", level: 1, exp: 0,
+      bond: 160, streak: 0, shield: 0, lastSettled: "2026-05-30", lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0, todayCreditedBond: 0,
+      nature: "Brave", iv: [1, 2, 3, 4, 5, 6], characteristic: "Likes to run",
+    }),
+  );
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    now: new Date(2026, 4, 30, 10), // daytime
+    today: "2026-05-30",
+    pendingButtons: [{ key: "KEY", kind: "long" }],
+    evolutionDelay: async () => {},
+  });
+
+  // care recorded, and a long-press does NOT itself evolve
+  assert.equal(state.careCount, 1);
+  assert.equal(state.species, "eevee");
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

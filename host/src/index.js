@@ -100,6 +100,10 @@ export async function runOneTick({
     usage.todayPeriod == null || usage.todayPeriod === today ? usage.todayTokens : 0;
   pet = applyDailyGrowth(pet, { todayTokens: creditedTokens, today });
 
+  if (buttonEvents.some((event) => event?.key === "KEY" && event?.kind === "long")) {
+    pet = { ...pet, careCount: Math.max(0, Number(pet.careCount ?? 0)) + 1 };
+  }
+
   // Table-driven: resolve once against the evolution tables, recompute readiness
   // every tick (can fall back to false), and reuse the same resolution for KEY.
   const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
