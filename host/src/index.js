@@ -174,9 +174,12 @@ export async function main({
   dashboard = process.env.CPB_DASHBOARD !== "0" && !once,
   dashboardHost = "127.0.0.1",
   dashboardPort = Number(process.env.CPB_DASHBOARD_PORT ?? 8765),
+  transport: injectedTransport,
+  weatherClient: injectedWeatherClient,
+  pollUsage = pollUsageOnce,
 } = {}) {
   let config = loadConfig(configPath);
-  const transport = await createTransport({ framePath });
+  const transport = injectedTransport ?? await createTransport({ framePath });
   let currentModel = null;
   const animator = createBuddyAnimator({
     transport,
@@ -192,7 +195,7 @@ export async function main({
     },
   });
 
-  const weatherClient = makeWeather();
+  const weatherClient = injectedWeatherClient ?? makeWeather();
   let lastKnownUsage = null;
   let stopped = false;
   let timer = null;
@@ -245,7 +248,7 @@ export async function main({
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
         const selected = usageForDisplay(snapshot, lastKnownUsage);
         lastKnownUsage = selected.lastKnown;
-        await pollUsageOnce().catch(() => {});
+        await pollUsage().catch(() => {});
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
         const room = transport.feedSensor();
@@ -272,27 +275,41 @@ export async function main({
     });
   }
 
-  async function runTickSafely() {
-    try {
-      await tick();
-    } catch (error) {
-      console.error("buddy tick failed; continuing:", error);
-    }
-  }
-
   if (once) {
     await tick(); // once mode: let errors propagate to the exit code
     return;
   }
 
-  await runTickSafely();
-  animator.start();
+  await runTickLoop({
+    runTick: tick,
+    intervalMs,
+    isStopped: () => stopped,
+    beforeLoop: () => animator.start(),
+    setTimer: (resolve, ms) => { timer = setTimeout(resolve, ms); },
+  });
+}
 
-  while (!stopped) {
-    await new Promise((resolve) => {
-      timer = setTimeout(resolve, intervalMs);
-    });
-    if (!stopped) await runTickSafely();
+export async function runTickLoop({
+  runTick,
+  intervalMs,
+  isStopped,
+  beforeLoop = () => {},
+  setTimer = (resolve, ms) => setTimeout(resolve, ms),
+  onError = (error) => console.error("buddy tick failed; continuing:", error),
+}) {
+  const safe = async () => {
+    try {
+      await runTick();
+    } catch (error) {
+      onError(error);
+    }
+  };
+
+  await safe();
+  beforeLoop();
+  while (!isStopped()) {
+    await new Promise((resolve) => setTimer(resolve, intervalMs));
+    if (!isStopped()) await safe();
   }
 }
 
