@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { toDashboardView } from "../src/web/viewmodel.js";
+import { PARAMS } from "../src/pet/sim.js";
 
 test("maps host state to dashboard view (read-only)", () => {
   const v = toDashboardView({
@@ -41,7 +42,8 @@ test("maps host state to dashboard view (read-only)", () => {
 
   assert.equal(v.buddy.name, "阿布");
   assert.equal(v.buddy.level, 7);
-  assert.equal(v.buddy.nextEvo.threshold, 160);
+  assert.equal(v.buddy.nextEvo.threshold, PARAMS.evolveBond);
+  assert.equal(v.buddy.nextEvo.threshold, 56);
   assert.equal(v.buddy.nextEvo.bond, 142);
   assert.equal(v.usage.modelled, true);
   assert.equal(v.secrets.discoveredCount, 1);
