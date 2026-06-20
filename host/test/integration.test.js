@@ -469,6 +469,36 @@ test("a buffered KEY-short press evolves a ready pet (H4 between-tick presses)",
   assert.equal(state.readyToEvolve, false);
 });
 
+test("growth is not credited from a ccusage day that isn't today (L3)", async () => {
+  const statePath = join("out", "test-l3-period-state.json");
+  const framePath = join("out", "test-l3-period-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(framePath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1, hatched: true, species: "eevee", level: 1, exp: 0,
+      bond: 0, streak: 0, shield: 0, lastSettled: "2026-05-29", lastGrowthDay: "2026-05-29",
+      todayCreditedExp: 0, todayCreditedBond: 0,
+      nature: "Brave", iv: [1, 2, 3, 4, 5, 6], characteristic: "Likes to run",
+    }),
+  );
+
+  const state = await runOneTick({
+    usage: { ...usageWithTokens(5_000), todayPeriod: "2026-05-29" }, // ccusage's latest day is yesterday
+    weather: sampleWeather(),
+    room: { t: 23.4, h: 56 },
+    statePath,
+    framePath,
+    mock: createMockTransport({ framePath }),
+    today: "2026-05-30",
+  });
+
+  // yesterday's 5000 tokens must NOT be credited to today
+  assert.equal(state.expGain, 0);
+});
+
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,

@@ -96,7 +96,9 @@ export async function runOneTick({
     usedDays: buildUsedDays(pet, today, usage),
   });
 
-  pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });
+  const creditedTokens =
+    usage.todayPeriod == null || usage.todayPeriod === today ? usage.todayTokens : 0;
+  pet = applyDailyGrowth(pet, { todayTokens: creditedTokens, today });
 
   // Table-driven: resolve once against the evolution tables, recompute readiness
   // every tick (can fall back to false), and reuse the same resolution for KEY.
@@ -144,7 +146,7 @@ export async function runOneTick({
       species: pet.species,
       readyToEvolve: pet.readyToEvolve,
       bond: pet.bond,
-      expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
+      expPct: Number.isFinite(pet.exp) ? Math.round((pet.exp / PARAMS.levelExp) * 100) : 0,
       bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species, mood),
     },
   };
