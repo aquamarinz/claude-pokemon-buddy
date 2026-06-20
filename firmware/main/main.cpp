@@ -81,6 +81,7 @@ static constexpr uint8_t T_ACK    = 0x84;
 
 static constexpr size_t RX_MAX   = 48 * 1024;     // > largest valid frame (~30KB)
 static constexpr size_t RECT_MAX = (W * H) / 8;   // 15000B = full-screen 1bpp
+static constexpr size_t MAX_INBOUND_PAYLOAD = 2 * RECT_MAX + 16; // RLE worst-case (~2x) + rect header slack
 static constexpr uint32_t SENSOR_PERIOD_MS = 30000;
 
 static uint8_t *rxbuf = nullptr;                  // frame accumulation (PSRAM)
@@ -185,7 +186,7 @@ static void parse_frames(void)
     while (rxlen - pos >= 5) {
         if (rxbuf[pos] != MAGIC) { pos++; continue; }
         uint16_t len = rxbuf[pos + 3] | (rxbuf[pos + 4] << 8);
-        if (len > RX_MAX) { pos++; continue; }
+        if (len > MAX_INBOUND_PAYLOAD) { pos++; continue; }
         size_t frameLen = 5 + (size_t)len + 4;
         if (rxlen - pos < frameLen) break;
         const uint8_t *f = rxbuf + pos;
@@ -216,8 +217,12 @@ static void rx_task(void *arg)
     for (;;) {
         int n = usb_serial_jtag_read_bytes(tmp, sizeof(tmp), pdMS_TO_TICKS(100));
         if (n <= 0) continue;
-        if (rxlen + (size_t)n > RX_MAX) rxlen = 0;
-        if ((size_t)n > RX_MAX) n = RX_MAX;
+        if (rxlen + (size_t)n > RX_MAX) {
+            parse_frames();                       // drain any complete frames before dropping
+            if (rxlen + (size_t)n > RX_MAX) {
+                rxlen = 0;                        // backlog is unparseable garbage -> last-resort resync
+            }
+        }
         memcpy(rxbuf + rxlen, tmp, n);
         rxlen += n;
         parse_frames();
@@ -264,7 +269,11 @@ static void synth_tone(const Note *notes, int count, int16_t **out, size_t *byte
     for (int j = 0; j < count; j++) frames += AUDIO_SR * notes[j].ms / 1000;
     *bytes = (size_t)frames * AUDIO_CH * sizeof(int16_t);
     *out = (int16_t *) heap_caps_malloc(*bytes, MALLOC_CAP_SPIRAM);
-    assert(*out);
+    if (*out == NULL) {
+        ESP_LOGE(TAG, "synth_tone: PSRAM alloc of %zu bytes failed", *bytes);
+        *bytes = 0;
+        return;
+    }
 
     int idx = 0;
     const int attack = AUDIO_SR * 5 / 1000;        // 5ms attack avoids a click
