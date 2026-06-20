@@ -355,6 +355,7 @@ void DisplayPort::InitLandscapeLUT() {
 }
 
 void DisplayPort::RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color) {
+    if (x >= width_ || y >= height_) return;   // match the guarded non-LUT variants
     uint32_t idx = PixelIndexLUT[x][y];
     uint8_t  mask = PixelBitLUT[x][y];
 

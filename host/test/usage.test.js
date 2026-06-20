@@ -30,6 +30,21 @@ test("normalizeUsage outputs cost/token and leaves percent null (rate-limits own
   assert.equal(u.weekTokens, weekTokens);
 });
 
+test("normalizeUsage surfaces activeDays (periods with usage)", () => {
+  const expected = dailyFixture.daily
+    .filter((day) => day.totalTokens > 0)
+    .map((day) => day.period);
+  const u = normalizeUsage({ blocksJson, dailyJson });
+
+  assert.deepEqual(u.activeDays, expected);
+  assert.equal(u.activeDays.at(-1), dailyFixture.daily.at(-1).period);
+});
+
+test("usageForDisplay degraded with no last-known reports activeDays null", () => {
+  const { usage } = usageForDisplay({ ok: false }, null);
+  assert.equal(usage.activeDays, null);
+});
+
 test("normalizeUsage fail-closed on bad JSON or schema drift", () => {
   assert.throws(() =>
     normalizeUsage({

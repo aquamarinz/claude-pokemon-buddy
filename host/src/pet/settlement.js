@@ -7,7 +7,7 @@ export function settleDays(
 ) {
   if (!pet.lastSettled) return pet;
 
-  const days = cappedDays(daysBetween(pet.lastSettled, today), maxCatchupDays);
+  const days = settlementWindow(pet.lastSettled, today, maxCatchupDays);
   if (days.length === 0) return pet;
 
   let bond = pet.bond;
@@ -26,6 +26,53 @@ export function settleDays(
   }
 
   return { ...pet, bond, streak, shield, lastSettled: days.at(-1) };
+}
+
+export function settlementWindow(lastSettled, today, maxCatchupDays = 30) {
+  if (!lastSettled) return [];
+  return cappedDays(daysBetween(lastSettled, today), maxCatchupDays);
+}
+
+export function activeDaysFromUsage(usage) {
+  if (!usage || usage.ok === false) return null;
+  // Empty array == "no history we can trust" -> null -> fail-open (never punish
+  // for data we cannot see). Non-array (missing field) is treated the same.
+  if (!Array.isArray(usage.activeDays) || usage.activeDays.length === 0) return null;
+  return new Set(usage.activeDays);
+}
+
+export function buildUsedDays(pet, today, usage, { maxCatchupDays = 30 } = {}) {
+  const window = settlementWindow(pet.lastSettled, today, maxCatchupDays);
+  const used = new Set();
+  if (window.length === 0) return used;
+
+  const active = activeDaysFromUsage(usage);
+  if (!active) {
+    // History unavailable -> cannot prove inactivity -> fail-open (no decay).
+    for (const day of window) used.add(day);
+    return used;
+  }
+
+  // Earliest day ccusage knows about; days before it are unknown -> fail-open.
+  let knownFrom = null;
+  for (const day of active) {
+    if (knownFrom === null || day < knownFrom) knownFrom = day;
+  }
+
+  for (const day of window) {
+    if (active.has(day) || (knownFrom !== null && day < knownFrom)) used.add(day);
+  }
+
+  // The in-progress last growth day, if it already earned, counts as used.
+  if (
+    pet.lastGrowthDay &&
+    pet.lastGrowthDay < today &&
+    ((pet.todayCreditedExp ?? 0) > 0 || (pet.todayCreditedBond ?? 0) > 0)
+  ) {
+    used.add(pet.lastGrowthDay);
+  }
+
+  return used;
 }
 
 function cappedDays(days, maxCatchupDays) {

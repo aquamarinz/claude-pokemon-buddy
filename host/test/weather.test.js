@@ -70,3 +70,24 @@ test("on fetch fail returns last-known degraded weather", async () => {
   assert.equal(r.temp, 19);
   assert.equal(r.cond, "晴");
 });
+
+test("weather cache is keyed by lat/lon (location change refetches)", async () => {
+  let calls = 0;
+  const fakeFetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      json: async () => ({
+        current: { temperature_2m: 19, apparent_temperature: 17, relative_humidity_2m: 64, weather_code: 3, wind_speed_10m: 11 },
+        daily: { temperature_2m_max: [22], temperature_2m_min: [14], precipitation_probability_max: [30] },
+      }),
+    };
+  };
+
+  const w = makeWeather({ fetch: fakeFetch }); // default 30-min TTL
+  await w.get(1, 2);
+  await w.get(1, 2); // same coords within TTL -> cached, no refetch
+  assert.equal(calls, 1);
+  await w.get(3, 4); // different coords -> refetch
+  assert.equal(calls, 2);
+});

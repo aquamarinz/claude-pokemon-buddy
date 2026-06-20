@@ -9,8 +9,9 @@ export const PARAMS = {
   costSpikeUSD: 30,
 };
 
-export function deriveMood({ p5h, todayCost }) {
-  if (todayCost >= PARAMS.costSpikeUSD) return "shocked";
+export function deriveMood({ p5h, todayCost } = {}) {
+  if (Number.isFinite(todayCost) && todayCost >= PARAMS.costSpikeUSD) return "shocked";
+  if (!Number.isFinite(p5h)) return "focused"; // unknown utilization -> neutral, never falsely happy
   if (p5h >= 100) return "fainted";
   if (p5h >= 80) return "strained";
   if (p5h >= 50) return "focused";

@@ -16,11 +16,13 @@ const WMO = {
 export function makeWeather({ fetch = globalThis.fetch, ttlMs = 30 * 60 * 1000 } = {}) {
   let last = null;
   let lastAt = 0;
+  let lastKey = null;
 
   return {
     async get(lat, lon) {
       const now = Date.now();
-      if (last && now - lastAt < ttlMs) return { ...last, degraded: false };
+      const key = `${lat},${lon}`;
+      if (last && key === lastKey && now - lastAt < ttlMs) return { ...last, degraded: false };
 
       try {
         const response = await fetch(weatherUrl(lat, lon));
@@ -29,6 +31,7 @@ export function makeWeather({ fetch = globalThis.fetch, ttlMs = 30 * 60 * 1000 }
         const json = await response.json();
         last = normalizeWeather(json);
         lastAt = now;
+        lastKey = key;
         return { ...last, degraded: false };
       } catch {
         return last ? { ...last, degraded: true } : { cond: "—", temp: null, degraded: true };

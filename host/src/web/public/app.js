@@ -42,16 +42,11 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   setStatus("保存中...");
   try {
-    const body = {
-      name: valueOf("settings-name"),
-      quietHours: {
-        start: numberOf("quiet-start"),
-        end: numberOf("quiet-end"),
-      },
-      volume: numberOf("settings-volume"),
-      lat: numberOf("settings-lat"),
-      lon: numberOf("settings-lon"),
-    };
+    const body = buildSettingsBody();
+    if (Object.keys(body).length === 0) {
+      setStatus("没有要保存的更改", true);
+      return;
+    }
 
     const res = await fetch("/api/settings", {
       method: "POST",
@@ -95,8 +90,9 @@ function render(view) {
 
 function renderUsage(usage) {
   setText("usage-modelled", usage.modelled ? "LOCAL/est" : "--");
-  setText("usage-p5h", formatPct(usage.p5h));
-  setText("usage-pweek", formatPct(usage.pweek));
+  const staleSuffix = usage.rateStale ? " 旧" : "";
+  setText("usage-p5h", usage.p5h == null ? formatPct(usage.p5h) : `${formatPct(usage.p5h)}${staleSuffix}`);
+  setText("usage-pweek", usage.pweek == null ? formatPct(usage.pweek) : `${formatPct(usage.pweek)}${staleSuffix}`);
   setText("usage-today", `${formatMoney(usage.todayCost)} · ${formatTokens(usage.todayTokens)}`);
   setText("usage-streak", usage.streak == null ? "--" : `${usage.streak}d`);
 }
@@ -249,6 +245,7 @@ function renderSecrets(secrets) {
 }
 
 function renderSettings(settings) {
+  if (form.contains(document.activeElement)) return; // don't overwrite an in-progress edit
   setInput("settings-name", settings.name ?? "");
   setInput("quiet-start", settings.quietHours?.start ?? "");
   setInput("quiet-end", settings.quietHours?.end ?? "");
@@ -306,12 +303,13 @@ function shortDate(value) {
 }
 
 function setText(id, value) {
-  document.getElementById(id).textContent = value;
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
 function setInput(id, value) {
   const input = document.getElementById(id);
-  if (document.activeElement !== input) input.value = value;
+  if (input && document.activeElement !== input) input.value = value;
 }
 
 function valueOf(id) {
@@ -319,7 +317,26 @@ function valueOf(id) {
 }
 
 function numberOf(id) {
-  return Number(document.getElementById(id).value);
+  const raw = document.getElementById(id).value;
+  if (raw.trim() === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function buildSettingsBody() {
+  const body = {};
+  const name = valueOf("settings-name").trim();
+  if (name !== "") body.name = name;
+  const start = numberOf("quiet-start");
+  const end = numberOf("quiet-end");
+  if (start !== undefined && end !== undefined) body.quietHours = { start, end };
+  const volume = numberOf("settings-volume");
+  if (volume !== undefined) body.volume = volume;
+  const lat = numberOf("settings-lat");
+  if (lat !== undefined) body.lat = lat;
+  const lon = numberOf("settings-lon");
+  if (lon !== undefined) body.lon = lon;
+  return body;
 }
 
 function setStatus(message, error = false) {

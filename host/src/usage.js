@@ -40,6 +40,7 @@ export function usageForDisplay(snapshot, lastKnown = null) {
       activeTokens: null,
       activeCost: null,
       todayPeriod: null,
+      activeDays: null,
       todayTokens: null,
       todayCost: null,
       weekTokens: null,
@@ -65,6 +66,10 @@ export function normalizeUsage({ blocksJson, dailyJson }) {
   const today = daily.at(-1);
   const todayPeriod = stringField(today.period, "daily.period");
 
+  const activeDays = daily
+    .filter((day) => numberField(day.totalTokens, "daily.totalTokens") > 0)
+    .map((day) => stringField(day.period, "daily.period"));
+
   // Percentages/resets are owned by the official statusline rate-limits feed
   // (see rate-limits.js); ccusage here only sources cost/token totals.
   return {
@@ -75,6 +80,7 @@ export function normalizeUsage({ blocksJson, dailyJson }) {
     resetsWeek: null,
     activeTokens,
     todayPeriod,
+    activeDays,
     todayTokens: numberField(today.totalTokens, "daily.totalTokens"),
     todayCost: numberField(today.totalCost, "daily.totalCost"),
     weekTokens,

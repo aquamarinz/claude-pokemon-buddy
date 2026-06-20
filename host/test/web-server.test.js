@@ -76,6 +76,33 @@ test("POST /api/settings rejects unknown field", async () => {
   }
 });
 
+test("POST /api/settings with an empty body is rejected and does not save", async () => {
+  let saved = 0;
+  const srv = await startWebServer({
+    host: "127.0.0.1",
+    port: 0,
+    getView: () => ({}),
+    saveSettings: () => {
+      saved += 1;
+    },
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/api/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "",
+    });
+
+    assert.equal(res.status, 400);
+    const json = await res.json();
+    assert.match(json.error, /no settings/i);
+    assert.equal(saved, 0);
+  } finally {
+    await srv.close();
+  }
+});
+
 test("GET /frame.png mirrors configured frame file", async () => {
   const framePath = join("out", `test-web-frame-${randomUUID()}.png`);
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);

@@ -7,7 +7,7 @@ import { cryFor } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
-import { settleDays } from "./pet/settlement.js";
+import { buildUsedDays, settleDays } from "./pet/settlement.js";
 import { resolveEvolution } from "./pet/evolution.js";
 import { runOnboarding } from "./pet/onboarding.js";
 import { createBuddyAnimator } from "./render/buddy-animator.js";
@@ -81,30 +81,28 @@ export async function runOneTick({
   personalityRng = Math.random,
   evolutionDelay,
   onRenderModel,
+  pendingButtons,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
 
   mkdirSync(dirname(statePath), { recursive: true });
   const activeTransport = transport ?? (mock ? adaptPngTransport(mock) : await transportFactory({ framePath }));
-  const buttonEvents = [];
+  const buttonEvents = Array.isArray(pendingButtons) ? [...pendingButtons] : [];
   const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
-  const closedUsageDays = new Set();
-  if (
-    pet.lastGrowthDay &&
-    pet.lastGrowthDay < today &&
-    ((pet.todayCreditedExp ?? 0) > 0 || (pet.todayCreditedBond ?? 0) > 0)
-  ) {
-    closedUsageDays.add(pet.lastGrowthDay);
-  }
-
   pet = settleDays(pet, today, {
-    usedDays: closedUsageDays,
+    usedDays: buildUsedDays(pet, today, usage),
   });
 
-  pet = applyDailyGrowth(pet, { todayTokens: usage.todayTokens, today });
+  const creditedTokens =
+    usage.todayPeriod == null || usage.todayPeriod === today ? usage.todayTokens : 0;
+  pet = applyDailyGrowth(pet, { todayTokens: creditedTokens, today });
+
+  if (buttonEvents.some((event) => event?.key === "KEY" && event?.kind === "long")) {
+    pet = { ...pet, careCount: Math.max(0, Number(pet.careCount ?? 0)) + 1 };
+  }
 
   // Table-driven: resolve once against the evolution tables, recompute readiness
   // every tick (can fall back to false), and reuse the same resolution for KEY.
@@ -138,6 +136,7 @@ export async function runOneTick({
     now,
     weather,
     room: sensor,
+    streak: pet.streak ?? 0,
     out: {
       t: weather.temp ?? 0,
       h: weather.humidity ?? 64,
@@ -151,7 +150,7 @@ export async function runOneTick({
       species: pet.species,
       readyToEvolve: pet.readyToEvolve,
       bond: pet.bond,
-      expPct: Math.round((pet.exp / PARAMS.levelExp) * 100),
+      expPct: Number.isFinite(pet.exp) ? Math.round((pet.exp / PARAMS.levelExp) * 100) : 0,
       bubble: sprite.placeholder ? "BUDDY" : cryFor(pet.species, mood),
     },
   };
@@ -175,9 +174,12 @@ export async function main({
   dashboard = process.env.CPB_DASHBOARD !== "0" && !once,
   dashboardHost = "127.0.0.1",
   dashboardPort = Number(process.env.CPB_DASHBOARD_PORT ?? 8765),
+  transport: injectedTransport,
+  weatherClient: injectedWeatherClient,
+  pollUsage = pollUsageOnce,
 } = {}) {
   let config = loadConfig(configPath);
-  const transport = await createTransport({ framePath });
+  const transport = injectedTransport ?? await createTransport({ framePath });
   let currentModel = null;
   const animator = createBuddyAnimator({
     transport,
@@ -193,19 +195,22 @@ export async function main({
     },
   });
 
-  const weatherClient = makeWeather();
+  const weatherClient = injectedWeatherClient ?? makeWeather();
   let lastKnownUsage = null;
   let stopped = false;
   let timer = null;
   let runtime = {};
   const actions = createActionQueue();
+  const buttonBuffer = [];
+  const offButtonBuffer = transport.onButton?.((event) => buttonBuffer.push(event));
   let signaturePlaying = false;
   const offSignature = transport.onButton?.((event) => {
     if (signaturePlaying || !currentModel || !shouldPlaySignature(event, runtime.pet)) return;
+    const pressModel = currentModel; // snapshot at press time; a later tick may reassign currentModel
     signaturePlaying = true;
     actions.run(async () => {
       animator.pause();
-      try { await playSignatureAnimation({ transport, model: currentModel }); }
+      try { await playSignatureAnimation({ transport, model: pressModel }); }
       finally { animator.resume(); }
     }).catch(() => {}).finally(() => { signaturePlaying = false; });
   });
@@ -217,9 +222,8 @@ export async function main({
         configPath,
         framePath,
         getRuntime: () => runtime,
-        onSettingsSaved: (value) => {
-          config = { ...config, ...value };
-        },
+        getConfig: () => config,
+        setConfig: (next) => { config = next; },
       })
     : null;
 
@@ -227,6 +231,7 @@ export async function main({
     stopped = true;
     if (timer) clearTimeout(timer);
     offSignature?.();
+    offButtonBuffer?.();
     animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
@@ -243,7 +248,7 @@ export async function main({
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
         const selected = usageForDisplay(snapshot, lastKnownUsage);
         lastKnownUsage = selected.lastKnown;
-        await pollUsageOnce().catch(() => {});
+        await pollUsage().catch(() => {});
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
         const room = transport.feedSensor();
@@ -255,6 +260,7 @@ export async function main({
           framePath,
           transport,
           onRenderModel: (model) => { currentModel = model; },
+          pendingButtons: buttonBuffer.splice(0),
         });
         runtime = { usage, weather, room, pet };
         const hour = new Date().getHours();
@@ -269,15 +275,41 @@ export async function main({
     });
   }
 
-  await tick();
-  if (once) return;
-  animator.start();
+  if (once) {
+    await tick(); // once mode: let errors propagate to the exit code
+    return;
+  }
 
-  while (!stopped) {
-    await new Promise((resolve) => {
-      timer = setTimeout(resolve, intervalMs);
-    });
-    if (!stopped) await tick();
+  await runTickLoop({
+    runTick: tick,
+    intervalMs,
+    isStopped: () => stopped,
+    beforeLoop: () => animator.start(),
+    setTimer: (resolve, ms) => { timer = setTimeout(resolve, ms); },
+  });
+}
+
+export async function runTickLoop({
+  runTick,
+  intervalMs,
+  isStopped,
+  beforeLoop = () => {},
+  setTimer = (resolve, ms) => setTimeout(resolve, ms),
+  onError = (error) => console.error("buddy tick failed; continuing:", error),
+}) {
+  const safe = async () => {
+    try {
+      await runTick();
+    } catch (error) {
+      onError(error);
+    }
+  };
+
+  await safe();
+  beforeLoop();
+  while (!isStopped()) {
+    await new Promise((resolve) => setTimer(resolve, intervalMs));
+    if (!isStopped()) await safe();
   }
 }
 
@@ -288,15 +320,15 @@ export function startDashboardServer({
   configPath = "config.json",
   framePath = "out/frame.png",
   getRuntime = () => ({}),
-  onSettingsSaved = () => {},
+  getConfig = () => loadConfig(configPath),
+  setConfig = () => {},
 } = {}) {
-  let config = loadConfig(configPath);
-
   return startWebServer({
     host,
     port,
     framePath,
     getView: () => {
+      const config = getConfig();
       const runtime = getRuntime();
       const pet = dashboardPet(runtime.pet ?? loadState(statePath), runtime.usage);
       const view = toDashboardView({
@@ -316,9 +348,9 @@ export function startDashboardServer({
     saveSettings: (input) => {
       const result = validateSettings(input);
       if (!result.ok) throw new Error(result.error);
-      config = { ...config, ...result.value };
-      saveConfig(configPath, config);
-      onSettingsSaved(result.value);
+      const next = { ...getConfig(), ...result.value };
+      setConfig(next);
+      saveConfig(configPath, next);
       return result.value;
     },
   });

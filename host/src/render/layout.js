@@ -53,6 +53,7 @@ export function layoutText(model = {}) {
     clock: formatClock(model.clock, now),
     p5h: percentText(model.p5h),
     pweek: percentText(model.pweek),
+    rateNote: model.rateStale ? "stale" : "",
     resets5h: formatReset(model.resets5h, now),
     resetsWeek: formatReset(model.resetsWeek, now),
     today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
@@ -90,6 +91,11 @@ function drawLeftPanel(g, model) {
 
   g.font = `700 12px ${MONO}`;
   g.fillText(text.resets5h, 11, 110);
+
+  if (text.rateNote) {
+    g.font = `700 12px ${MONO}`;
+    g.fillText(text.rateNote, 11, 46);
+  }
 
   g.font = `800 12px ${MONO}`;
   g.fillText("WEEK", 11, 135);

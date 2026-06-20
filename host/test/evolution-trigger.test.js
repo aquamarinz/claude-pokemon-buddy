@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { runOneTick } from "../src/index.js";
 import { createMockTransport } from "../src/transport/mock.js";
@@ -235,6 +235,7 @@ test("KEY evolution saves evolved state and pushes the animation", async () => {
 function writeState(statePath, overrides) {
   rmSync(statePath, { force: true });
   rmSync(`${statePath}.bak`, { force: true });
+  mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(
     statePath,
     JSON.stringify({

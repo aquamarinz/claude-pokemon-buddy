@@ -1,4 +1,4 @@
-const EVOLVE_BOND = 160;
+import { PARAMS } from "../pet/sim.js";
 
 export function toDashboardView({ pet, usage, weather, sensors, journey, secrets, config }) {
   return {
@@ -15,7 +15,7 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
       badges: pet.badges,
       nextEvo: {
         bond: pet.bond,
-        threshold: EVOLVE_BOND,
+        threshold: PARAMS.evolveBond,
         ready: Boolean(pet.readyToEvolve),
       },
     },
@@ -26,6 +26,7 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
       todayTokens: usage.todayTokens,
       streak: usage.streak,
       modelled: usage.modelled,
+      rateStale: Boolean(usage.rateStale),
     },
     weather,
     room: {

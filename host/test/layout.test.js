@@ -143,6 +143,12 @@ test("layout text uses degraded labels instead of fake reset data", () => {
   assert.match(text.weatherDetail, /风--/);
 });
 
+test("layoutText flags stale rate-limit data via rateNote", () => {
+  assert.equal(layoutText({ p5h: 72, pweek: 41, rateStale: true }).rateNote, "stale");
+  assert.equal(layoutText({ p5h: 72, pweek: 41, rateStale: false }).rateNote, "");
+  assert.equal(layoutText({ p5h: 72, pweek: 41 }).rateNote, "");
+});
+
 test("ready-to-evolve badge differs from species-name line", async () => {
   const normal = await renderFrame(baseModel({ readyToEvolve: false }));
   const ready = await renderFrame(baseModel({ readyToEvolve: true }));
