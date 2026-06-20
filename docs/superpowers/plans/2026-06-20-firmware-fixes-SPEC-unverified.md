@@ -1,6 +1,6 @@
-# Firmware Fixes SPEC (M9, M12, L9, L8) — UNVERIFIED, apply in a build environment
+# Firmware Fixes SPEC (M9, M12, L9, L8) — APPLIED + build-verified
 
-> ⚠️ **NOT APPLIED / NOT COMMITTED.** These are ready-to-apply diffs for the ESP-IDF firmware. The host build environment for this session has **no `idf.py`** (ESP-IDF toolchain absent), so these changes **cannot be compiled or board-tested here**. Per "evidence before claims," the firmware source was left untouched. Apply each diff in a build-capable environment, then verify with `idf.py build` and (ideally) a flash + serial round-trip before merging.
+> ✅ **APPLIED + BUILD-VERIFIED (2026-06-20).** ESP-IDF v5.4.4 turned out to be available in-session (`. ~/esp/esp-idf/export.sh`); all four diffs below were applied and `cd firmware && idf.py build` (target esp32s3) compiles cleanly (exit 0, "Project build complete"). NOT yet board-smoke-tested (no hardware attached) — flash + serial round-trip recommended before shipping. Committed alongside this doc.
 
 **Scope:** `firmware/main/main.cpp` (M9, L9, L8) and `firmware/components/port_bsp/display_bsp.cpp` (M12).
 **Constants (verified):** `RX_MAX = 48*1024 = 49152`, `RECT_MAX = (W*H)/8 = 15000`, `W=400 H=300`, `width_/height_` are `DisplayPort` members.
