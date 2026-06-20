@@ -94,3 +94,42 @@ test("dashboard server reflects host state and persists settings updates", async
     rmSync(framePath, { force: true });
   }
 });
+
+test("dashboard reads and writes config through main()'s in-memory closures (M5)", async () => {
+  const configPath = join("out", "test-m5-config.json");
+  const statePath = join("out", "test-m5-state.json");
+  const framePath = join("out", "test-m5-frame.png");
+  rmSync(configPath, { force: true });
+  rmSync(statePath, { force: true });
+
+  let config = { name: "old", quietHours: { start: 22, end: 8 }, volume: 50, lat: 1, lon: 2 };
+  const handle = await startDashboardServer({
+    port: 0,
+    statePath,
+    configPath,
+    framePath,
+    getRuntime: () => ({}),
+    getConfig: () => config,
+    setConfig: (next) => { config = next; },
+  });
+
+  try {
+    const before = await (await fetch(`http://127.0.0.1:${handle.port}/api/state`)).json();
+    assert.equal(before.settings.name, "old");
+
+    const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "new" }),
+    });
+    assert.equal(res.status, 200);
+
+    // the in-memory object main()'s next tick reads is updated (not just the disk file)
+    assert.equal(config.name, "new");
+
+    const after = await (await fetch(`http://127.0.0.1:${handle.port}/api/state`)).json();
+    assert.equal(after.settings.name, "new");
+  } finally {
+    await handle.close();
+  }
+});
