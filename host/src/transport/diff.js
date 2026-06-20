@@ -20,7 +20,7 @@ export function diffRect(prevBits, nextBits, w, h) {
   if (maxX < 0) return null;
 
   const x = Math.floor(minX / 8) * 8;
-  const right = Math.min(w, Math.ceil((maxX + 1) / 8) * 8);
+  const right = Math.min(Math.ceil(w / 8) * 8, Math.ceil((maxX + 1) / 8) * 8);
   const rectW = right - x;
   const rectH = maxY - minY + 1;
   return {
