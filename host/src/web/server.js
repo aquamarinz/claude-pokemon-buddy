@@ -7,6 +7,26 @@ import { validateSettings } from "./settings.js";
 
 const DEFAULT_PUBLIC_DIR = fileURLToPath(new URL("./public", import.meta.url));
 const EVOLUTION_STONES = new Set(["water", "thunder", "fire"]);
+const SPRITE_FILES = new Map([
+  ["/sprites/eevee", fileURLToPath(new URL("../../seed/sprites/eevee.png", import.meta.url))],
+  ["/sprites/vaporeon", fileURLToPath(new URL("../../seed/sprites/vaporeon.png", import.meta.url))],
+  ["/sprites/jolteon", fileURLToPath(new URL("../../seed/sprites/jolteon.png", import.meta.url))],
+  ["/sprites/flareon", fileURLToPath(new URL("../../seed/sprites/flareon.png", import.meta.url))],
+  ["/sprites/espeon", fileURLToPath(new URL("../../seed/sprites/espeon.png", import.meta.url))],
+  ["/sprites/umbreon", fileURLToPath(new URL("../../seed/sprites/umbreon.png", import.meta.url))],
+  ["/sprites/leafeon", fileURLToPath(new URL("../../seed/sprites/leafeon.png", import.meta.url))],
+  ["/sprites/glaceon", fileURLToPath(new URL("../../seed/sprites/glaceon.png", import.meta.url))],
+  ["/sprites/sylveon", fileURLToPath(new URL("../../seed/sprites/sylveon.png", import.meta.url))],
+  ["/sprites/bulbasaur", fileURLToPath(new URL("../../seed/sprites/bulbasaur.png", import.meta.url))],
+  ["/sprites/ivysaur", fileURLToPath(new URL("../../seed/sprites/ivysaur.png", import.meta.url))],
+  ["/sprites/venusaur", fileURLToPath(new URL("../../seed/sprites/venusaur.png", import.meta.url))],
+  ["/sprites/charmander", fileURLToPath(new URL("../../seed/sprites/charmander.png", import.meta.url))],
+  ["/sprites/charmeleon", fileURLToPath(new URL("../../seed/sprites/charmeleon.png", import.meta.url))],
+  ["/sprites/charizard", fileURLToPath(new URL("../../seed/sprites/charizard.png", import.meta.url))],
+  ["/sprites/squirtle", fileURLToPath(new URL("../../seed/sprites/squirtle.png", import.meta.url))],
+  ["/sprites/wartortle", fileURLToPath(new URL("../../seed/sprites/wartortle.png", import.meta.url))],
+  ["/sprites/blastoise", fileURLToPath(new URL("../../seed/sprites/blastoise.png", import.meta.url))],
+]);
 
 export function startWebServer({
   host = "127.0.0.1",
@@ -160,6 +180,11 @@ async function routeRequest(req, res, context) {
 
   if (req.method === "GET" && url.pathname === "/frame.png") {
     await serveFile(res, context.framePath, "image/png");
+    return;
+  }
+
+  if (req.method === "GET" && SPRITE_FILES.has(url.pathname)) {
+    await serveFile(res, SPRITE_FILES.get(url.pathname), "image/png");
     return;
   }
 

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { buddyBold } from "../src/render/layout.js";
-import { grayToBitmap, renderFrame } from "../src/render/frame.js";
+import { grayToBitmap, imageDataToFrame, renderFrame } from "../src/render/frame.js";
 
 test("buddyBold: all species render thin by default", () => {
   for (const sp of [
@@ -57,6 +57,16 @@ test("grayToBitmap hard-thresholds canvas gray without Bayer pattern", () => {
   const bitmap = grayToBitmap(new Uint8Array(8 * 8).fill(216), 8, 8);
 
   assert.equal(countOnPixels(bitmap, 0, 0, 8, 8), 0);
+});
+
+test("imageDataToFrame rejects dimensions other than the panel size", async () => {
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const g = createCanvas(10, 10).getContext("2d");
+
+  await assert.rejects(
+    () => imageDataToFrame(g.getImageData(0, 0, 10, 10)),
+    /expected 400x300, got 10x10/,
+  );
 });
 
 test("bold dilation adds ink versus thin for the same sprite", async () => {

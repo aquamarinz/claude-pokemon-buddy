@@ -55,6 +55,18 @@ test("choose screen highlights selected chip distinctly (inverted)", async () =>
   assert.ok(selected > unselected + 0.25, `selected chip should be inverted (${selected} vs ${unselected})`);
 });
 
+test("choose screen chip borders land on black bitmap pixels", async () => {
+  const { bitmap } = await renderOnboarding({ kind: "choose", candidates: CANDIDATES, sel: 0 });
+  const bx = 24;
+  const bw = Math.round((400 - 48 - 18) / 4);
+  const x = Math.round(bx + bw + 6);
+  const y = 194;
+
+  assert.equal(inkAt(bitmap, x + 2, y), 1);
+  assert.equal(inkAt(bitmap, x, y + 2), 1);
+  assert.equal(inkAt(bitmap, x + bw - 2, y + 63), 1);
+});
+
 test("oak screen page dots reflect current page", async () => {
   const lines = ["a", "b", "c", "d"];
   const p1 = await renderOnboarding({ kind: "oak", lines, page: 1, total: 4 });
@@ -83,4 +95,9 @@ function inkRatio(bitmap, x, y, w, h) {
     }
   }
   return ink / total;
+}
+
+function inkAt(bitmap, x, y) {
+  const rowBytes = Math.ceil(bitmap.w / 8);
+  return (bitmap.bytes[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1;
 }

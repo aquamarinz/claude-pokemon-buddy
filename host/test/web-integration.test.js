@@ -85,6 +85,19 @@ test("dashboard server reflects host state and persists settings updates", async
     assert.equal(secondJson.settings.volume, 20);
     assert.equal(loadConfig(configPath).name, "布布");
     assert.equal(loadConfig(configPath).difficulty, "normal");
+
+    const reset = await fetch(`http://127.0.0.1:${srv.port}/api/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "" }),
+    });
+    assert.equal(reset.status, 200);
+
+    const third = await fetch(`http://127.0.0.1:${srv.port}/api/state`);
+    const thirdJson = await third.json();
+    assert.equal(thirdJson.buddy.name, "阿布");
+    assert.equal(thirdJson.settings.name, "阿布");
+    assert.equal(loadConfig(configPath).name, "阿布");
   } finally {
     await srv.close();
     rmSync(statePath, { force: true });
@@ -92,6 +105,54 @@ test("dashboard server reflects host state and persists settings updates", async
     rmSync(configPath, { force: true });
     rmSync(`${configPath}.bak`, { force: true });
     rmSync(framePath, { force: true });
+  }
+});
+
+test("dashboard cold-start weather is marked degraded until a real fetch lands", async () => {
+  const id = randomUUID();
+  const statePath = join("out", `test-dashboard-weather-state-${id}.json`);
+  const configPath = join("out", `test-dashboard-weather-config-${id}.json`);
+  const framePath = join("out", `test-dashboard-weather-frame-${id}.png`);
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 0,
+      shield: 0,
+      lastSettled: "2026-05-30",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+    }),
+  );
+  writeFileSync(configPath, JSON.stringify({ name: "阿布" }));
+
+  const srv = await startDashboardServer({
+    host: "127.0.0.1",
+    port: 0,
+    statePath,
+    configPath,
+    framePath,
+    getRuntime: () => ({}),
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/api/state`);
+    const json = await res.json();
+
+    assert.equal(json.weather.degraded, true);
+  } finally {
+    await srv.close();
+    rmSync(statePath, { force: true });
+    rmSync(`${statePath}.bak`, { force: true });
+    rmSync(configPath, { force: true });
+    rmSync(`${configPath}.bak`, { force: true });
   }
 });
 

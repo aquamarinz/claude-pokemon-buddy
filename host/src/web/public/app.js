@@ -1,5 +1,10 @@
 const POLL_MS = 5_000;
-const SPRITE_BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon";
+const LOCAL_SPRITES = new Set([
+  "eevee", "vaporeon", "jolteon", "flareon", "espeon", "umbreon",
+  "leafeon", "glaceon", "sylveon", "bulbasaur", "ivysaur", "venusaur",
+  "charmander", "charmeleon", "charizard", "squirtle", "wartortle", "blastoise",
+]);
+const BOX_MAX = LOCAL_SPRITES.size;
 const SPECIES = {
   bulbasaur: { dex: 1, label: "妙蛙种子 Bulbasaur" },
   charmander: { dex: 4, label: "小火龙 Charmander" },
@@ -98,8 +103,9 @@ function renderUsage(usage) {
 }
 
 function renderWeather(weather, room) {
+  const weatherPrefix = weather.degraded ? "degraded " : "";
   const weatherLine = weather.cond
-    ? `${weather.cond} ${formatTemp(weather.temp)} · ${formatRange(weather.lo, weather.hi)} · 降水 ${formatPct(weather.precip)}`
+    ? `${weatherPrefix}${weather.cond} ${formatTemp(weather.temp)} · ${formatRange(weather.lo, weather.hi)} · 降水 ${formatPct(weather.precip)}`
     : "--";
   setText("weather-line", weatherLine);
   setText("room-line", room.t == null && room.h == null ? "--" : `${formatTemp(room.t)} · ${room.h ?? "--"}%`);
@@ -120,7 +126,7 @@ function renderBuddy(buddy, difficulty) {
   setText("buddy-dex", species.dex ? `#${species.dex}` : "#---");
 
   const sprite = document.getElementById("buddy-sprite");
-  sprite.src = species.dex ? `${SPRITE_BASE}/${species.dex}.png` : "";
+  sprite.src = spriteSrc(species.key);
 
   renderIv(buddy.iv ?? []);
   renderBadges(buddy.badges ?? []);
@@ -255,16 +261,17 @@ function renderBox(view) {
   const buddy = view.buddy ?? {};
   const box = Array.isArray(view.box) && view.box.length > 0 ? view.box : buddy.species ? [buddy.species] : [];
   root.textContent = "";
-  setText("box-count", `${box.length} / ${Math.max(1, box.length)}`);
+  setText("box-count", `${box.length} / ${BOX_MAX}`);
 
   for (const item of box) {
     const species = speciesInfo(typeof item === "string" ? item : item.species);
     const slot = document.createElement("div");
     slot.className = `slot${species.key === buddy.species ? " sel" : ""}`;
-    if (species.dex) {
+    const src = spriteSrc(species.key);
+    if (src) {
       const img = document.createElement("img");
       img.alt = species.label;
-      img.src = `${SPRITE_BASE}/${species.dex}.png`;
+      img.src = src;
       slot.appendChild(img);
     } else {
       slot.textContent = species.label;
@@ -346,6 +353,10 @@ function speciesInfo(key) {
   return { key: normalized, dex: null, label: key ?? "--" };
 }
 
+function spriteSrc(key) {
+  return LOCAL_SPRITES.has(key) ? `/sprites/${key}` : "";
+}
+
 function hearts(bond) {
   if (bond == null) return "--";
   const count = Math.max(0, Math.min(5, Math.round(Number(bond) / 40)));
@@ -405,8 +416,12 @@ function numberOf(id) {
 
 function buildSettingsBody() {
   const body = {};
-  const name = valueOf("settings-name").trim();
-  if (name !== "") body.name = name;
+  body.name = valueOf("settings-name").trim();
+  const hasQuietStart = valueOf("quiet-start").trim() !== "";
+  const hasQuietEnd = valueOf("quiet-end").trim() !== "";
+  if (hasQuietStart !== hasQuietEnd) {
+    throw new Error("quietHours start/end must both be filled");
+  }
   const start = numberOf("quiet-start");
   const end = numberOf("quiet-end");
   if (start !== undefined && end !== undefined) body.quietHours = { start, end };

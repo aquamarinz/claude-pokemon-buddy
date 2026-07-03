@@ -4,7 +4,7 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { zhName } from "../pet/species-meta.js";
 import { drawIdleAccent } from "./idle-accents.js";
-import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
+import { H, INK, LEFT_W, PAPER, W } from "./palette.js";
 import { ditherSpriteGray, dilate1bpp, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
 
 export const ZPIX_FONT_PATH = fileURLToPath(new URL("../../seed/fonts/zpix.ttf", import.meta.url));
@@ -25,6 +25,8 @@ export function buddyBold(species) {
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
 const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
+const BOND_SOFT_CAP = 180;
+const HEART_MAX = 5;
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -305,10 +307,21 @@ function drawBubble(g, rightX, y, text) {
 }
 
 function drawShadow(g, cx, y) {
-  g.fillStyle = LIGHT;
-  g.beginPath();
-  g.ellipse(cx, y, 57, 10, 0, 0, Math.PI * 2);
-  g.fill();
+  const rx = 57;
+  const ry = 10;
+  const left = Math.ceil(cx - rx);
+  const right = Math.floor(cx + rx);
+  const top = Math.ceil(y - ry);
+  const bottom = Math.floor(y + ry);
+  g.fillStyle = INK;
+  for (let yy = top; yy <= bottom; yy += 1) {
+    for (let xx = left; xx <= right; xx += 1) {
+      if (((xx + yy) & 1) !== 0) continue;
+      const dx = (xx - cx) / rx;
+      const dy = (yy - y) / ry;
+      if (dx * dx + dy * dy <= 1) g.fillRect(xx, yy, 1, 1);
+    }
+  }
   g.fillStyle = INK;
 }
 
@@ -459,8 +472,9 @@ function line(g, x1, y1, x2, y2) {
 }
 
 export function heartCount(rawBond) {
-  const v = Math.round(((Number(rawBond) || 0) / 40) * 2) / 2;
-  return Math.max(0, Math.min(5, v));
+  const perHeart = BOND_SOFT_CAP / HEART_MAX;
+  const v = Math.round(((Number(rawBond) || 0) / perHeart) * 2) / 2;
+  return Math.max(0, Math.min(HEART_MAX, v));
 }
 
 function tempHum(v) {

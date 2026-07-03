@@ -68,6 +68,20 @@ test("forwards rateStale into the dashboard usage block", () => {
   assert.equal(fresh.usage.rateStale, false);
 });
 
+test("forwards degraded weather into the dashboard view", () => {
+  const view = toDashboardView({
+    pet: { species: "eevee", level: 1, exp: 0, bond: 0, mood: "happy", nature: "-", iv: [], characteristic: "-", badges: [], readyToEvolve: false },
+    usage: { p5h: 72, pweek: 41 },
+    weather: { cond: "cloud", temp: 19, degraded: true },
+    sensors: { roomT: null, roomH: null },
+    journey: [],
+    secrets: { discovered: [], total: 12 },
+    config: { name: "x", quietHours: { start: 22, end: 8 }, volume: 70, lat: 0, lon: 0 },
+  });
+
+  assert.equal(view.weather.degraded, true);
+});
+
 test("forwards pending evolution candidates into the dashboard next-evolution block", () => {
   const base = {
     pet: {

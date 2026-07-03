@@ -35,6 +35,7 @@ const DEFAULT_WEATHER = {
   precip: 30,
   wind: 11,
   humidity: 64,
+  degraded: true,
 };
 
 // Overlay official statusline rate-limits (5h/week %/reset) onto the ccusage
@@ -496,9 +497,11 @@ export function startDashboardServer({
       const result = validateSettings(input);
       if (!result.ok) throw new Error(result.error);
       const next = { ...getConfig(), ...result.value };
-      setConfig(next);
+      if (result.value.name === "") delete next.name;
       saveConfig(configPath, next);
-      onSettingsChanged(result.value, next);
+      const effective = loadConfig(configPath);
+      setConfig(effective);
+      onSettingsChanged(result.value, effective);
       return result.value;
     },
     chooseEvolution: (to) => {
@@ -558,12 +561,23 @@ function makeNewborn(species, name, today, personalityRng = Math.random) {
   };
 }
 
-function makeOnboardingIo(transport) {
-  let resolveBtn = null;
-  const off = transport.onButton?.((b) => { const r = resolveBtn; resolveBtn = null; r?.(b); });
+export function makeOnboardingIo(transport) {
+  const queue = [];
+  const waiters = [];
+  const off = transport.onButton?.((button) => {
+    const waiter = waiters.shift();
+    if (waiter) {
+      waiter(button);
+      return;
+    }
+    if (queue.length < 8) queue.push(button);
+  });
   const io = {
     push: (frame) => transport.push(frame),
-    nextButton: () => new Promise((res) => { resolveBtn = res; }),
+    nextButton: () => {
+      if (queue.length > 0) return Promise.resolve(queue.shift());
+      return new Promise((res) => { waiters.push(res); });
+    },
     playSound: (id) => transport.playSound?.(id),
     delay: (ms) => new Promise((res) => setTimeout(res, ms)),
   };

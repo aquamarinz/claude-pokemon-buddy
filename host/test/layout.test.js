@@ -85,7 +85,7 @@ test("heartCount maps raw bond to 0-5 in half-heart steps", () => {
   assert.equal(heartCount(0), 0);
   assert.equal(heartCount(40), 1);
   assert.equal(heartCount(60), 1.5);
-  assert.equal(heartCount(200), 5);
+  assert.equal(heartCount(180), 5);
   assert.equal(heartCount(9999), 5);
 });
 
@@ -155,6 +155,16 @@ test("ready-to-evolve badge differs from species-name line", async () => {
   assert.ok(!normal.pngBuffer.equals(ready.pngBuffer), "badge state must render differently");
 });
 
+test("buddy ground shadow survives the 1-bit threshold", async () => {
+  const { bitmap } = await renderFrame(baseModel({
+    spriteGray: new Uint8Array(40 * 40).fill(255),
+    spriteW: 40,
+    spriteH: 40,
+  }));
+
+  assert.ok(countOnPixels(bitmap, 250, 194, 100, 12) > 0, "shadow region must contain ink pixels");
+});
+
 function baseModel(extra) {
   return {
     p5h: 12,
@@ -178,4 +188,17 @@ function baseModel(extra) {
       ...extra,
     },
   };
+}
+
+function countOnPixels(bitmap, x, y, w, h) {
+  const rowBytes = Math.ceil(bitmap.w / 8);
+  let count = 0;
+
+  for (let yy = y; yy < y + h; yy += 1) {
+    for (let xx = x; xx < x + w; xx += 1) {
+      count += (bitmap.bytes[yy * rowBytes + (xx >> 3)] >> (7 - (xx & 7))) & 1;
+    }
+  }
+
+  return count;
 }

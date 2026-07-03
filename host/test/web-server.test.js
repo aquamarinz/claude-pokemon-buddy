@@ -277,6 +277,26 @@ test("GET /frame.png mirrors configured frame file", async () => {
   }
 });
 
+test("GET /sprites/:id serves only whitelisted local sprite assets", async () => {
+  const srv = await startWebServer({
+    host: "127.0.0.1",
+    port: 0,
+  });
+
+  try {
+    const known = await fetch(`http://127.0.0.1:${srv.port}/sprites/eevee`);
+    const knownBody = Buffer.from(await known.arrayBuffer());
+    assert.equal(known.status, 200);
+    assert.equal(known.headers.get("content-type"), "image/png");
+    assert.equal(knownBody.subarray(1, 4).toString("ascii"), "PNG");
+
+    const unknown = await fetch(`http://127.0.0.1:${srv.port}/sprites/missingno`);
+    assert.equal(unknown.status, 404);
+  } finally {
+    await srv.close();
+  }
+});
+
 function requestRaw({ port, path, method = "GET", headers = {}, body = "" }) {
   return new Promise((resolve, reject) => {
     const req = http.request(
