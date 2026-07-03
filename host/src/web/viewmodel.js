@@ -17,6 +17,7 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
         bond: pet.bond,
         threshold: PARAMS.evolveBond,
         ready: Boolean(pet.readyToEvolve),
+        pendingCandidates: normalizeCandidates(pet.pendingCandidates),
       },
     },
     usage: {
@@ -49,4 +50,11 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
     },
     difficulty: "NORMAL · 锁定",
   };
+}
+
+function normalizeCandidates(candidates) {
+  if (!Array.isArray(candidates)) return [];
+  return candidates
+    .filter((candidate) => typeof candidate?.to === "string")
+    .map((candidate) => ({ to: candidate.to, priority: candidate.priority }));
 }

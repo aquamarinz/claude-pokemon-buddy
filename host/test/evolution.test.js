@@ -2,15 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eligibleBranches, resolveEvolution } from "../src/pet/evolution.js";
 
-test("multiple eligible branches return candidates sorted by priority with no auto choice", () => {
+test("care-gated Eevee branch auto-resolves before lower-priority branches", () => {
   const cands = eligibleBranches("eevee", {
-    bond: 170,
+    bond: 56,
     care: true,
     daytime: true,
     warmHumid: true,
   });
   const resolved = resolveEvolution("eevee", {
-    bond: 170,
+    bond: 56,
     care: true,
     daytime: true,
     warmHumid: true,
@@ -24,12 +24,27 @@ test("multiple eligible branches return candidates sorted by priority with no au
       { to: "leafeon", priority: 3 },
     ],
   );
-  assert.equal(resolved.auto, null);
+  assert.equal(resolved.auto, "sylveon");
   assert.deepEqual(resolved.candidates, cands);
 });
 
-test("single eligible branch auto-evolves", () => {
-  const resolved = resolveEvolution("eevee", { bond: 170, night: true });
+test("daytime Eevee without care or environment auto-resolves to Espeon", () => {
+  const resolved = resolveEvolution("eevee", { bond: 56, daytime: true });
+
+  assert.deepEqual(resolved, {
+    auto: "espeon",
+    candidates: [
+      {
+        to: "espeon",
+        needs: { bond: 56, daytime: true },
+        priority: 2,
+      },
+    ],
+  });
+});
+
+test("night Eevee without care auto-resolves to Umbreon", () => {
+  const resolved = resolveEvolution("eevee", { bond: 56, night: true });
 
   assert.deepEqual(resolved, {
     auto: "umbreon",
@@ -41,6 +56,19 @@ test("single eligible branch auto-evolves", () => {
       },
     ],
   });
+});
+
+test("warm humid daytime Eevee without care waits for player branch choice", () => {
+  const resolved = resolveEvolution("eevee", { bond: 56, daytime: true, warmHumid: true });
+
+  assert.equal(resolved.auto, null);
+  assert.deepEqual(
+    resolved.candidates.map(({ to, priority }) => ({ to, priority })),
+    [
+      { to: "espeon", priority: 2 },
+      { to: "leafeon", priority: 3 },
+    ],
+  );
 });
 
 test("stone branch overrides when another branch is also eligible", () => {

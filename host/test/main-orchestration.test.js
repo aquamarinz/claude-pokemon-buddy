@@ -301,6 +301,58 @@ test("onboarding button handling is isolated before the resident dispatcher star
   assert.equal(transport.subscriptionCount(), 2); // onboarding, then resident dispatcher after onboarding cleanup
 });
 
+test("evolution choice intent submitted during a tick is applied on the next tick without clobbering state", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-rh1-midtick-intent-state.json");
+  const framePath = join("out", "test-rh1-midtick-intent-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  writeState(statePath, {
+    species: "eevee",
+    bond: 160,
+    pendingCandidates: [
+      { to: "espeon", needs: { bond: 56, daytime: true }, priority: 2 },
+      { to: "leafeon", needs: { bond: 56, warmHumid: true }, priority: 3 },
+    ],
+  });
+  const evolutionIntents = intentQueue();
+  const transport = createButtonEventTransport({
+    onFeedSensor: ({ calls }) => {
+      if (calls === 1) evolutionIntents.push({ type: "choose", to: "leafeon" });
+    },
+  });
+
+  const first = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: { ...sampleWeather(), temp: 24, humidity: 70 },
+    statePath,
+    framePath,
+    transport,
+    evolutionIntents,
+    today: "2026-05-30",
+    now: new Date(2026, 4, 30, 10),
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(first.species, "eevee");
+  assert.deepEqual(first.pendingCandidates.map(({ to }) => to), ["espeon", "leafeon"]);
+
+  const second = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: { ...sampleWeather(), temp: 24, humidity: 70 },
+    statePath,
+    framePath,
+    transport,
+    evolutionIntents,
+    today: "2026-05-30",
+    now: new Date(2026, 4, 30, 10),
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(second.species, "leafeon");
+  assert.equal(second.pendingCandidates, undefined);
+});
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -433,6 +485,18 @@ function createOnboardingTransport() {
     },
     subscriptionCount() {
       return subscriptions;
+    },
+  };
+}
+
+function intentQueue(initial = []) {
+  const items = [...initial];
+  return {
+    push(intent) {
+      items.push(intent);
+    },
+    drain() {
+      return items.splice(0);
     },
   };
 }

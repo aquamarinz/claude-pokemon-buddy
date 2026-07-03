@@ -124,7 +124,7 @@ function renderBuddy(buddy, difficulty) {
 
   renderIv(buddy.iv ?? []);
   renderBadges(buddy.badges ?? []);
-  renderNextEvo(buddy.nextEvo ?? {});
+  renderNextEvo(buddy.nextEvo ?? {}, buddy);
 }
 
 function renderIv(iv) {
@@ -161,13 +161,93 @@ function renderBadges(badges) {
   }
 }
 
-function renderNextEvo(nextEvo) {
+function renderNextEvo(nextEvo, buddy = {}) {
   const bond = Number(nextEvo.bond ?? 0);
   const threshold = Number(nextEvo.threshold ?? 0);
   const pct = threshold > 0 ? Math.round((bond / threshold) * 100) : 0;
   const ready = nextEvo.ready ? " · READY" : "";
   setText("next-evo-label", threshold > 0 ? `亲密 ${bond} / ${threshold}${ready}` : "--");
   document.getElementById("next-evo-bar").style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  renderEvolutionControls(nextEvo, buddy);
+}
+
+function renderEvolutionControls(nextEvo, buddy) {
+  const root = ensureEvolutionControls();
+  if (!root) return;
+  root.textContent = "";
+
+  const candidates = Array.isArray(nextEvo.pendingCandidates) ? nextEvo.pendingCandidates : [];
+  const showStoneButtons = buddy.species === "eevee";
+  if (candidates.length === 0 && !showStoneButtons) {
+    root.hidden = true;
+    return;
+  }
+
+  root.hidden = false;
+  for (const candidate of candidates) {
+    if (typeof candidate?.to !== "string") continue;
+    root.appendChild(makeEvolutionButton(`选择 ${speciesInfo(candidate.to).label}`, () => (
+      postEvolutionIntent("/api/evolution/choose", { to: candidate.to })
+    )));
+  }
+
+  if (showStoneButtons) {
+    for (const [stone, label] of [
+      ["water", "水之石"],
+      ["thunder", "雷之石"],
+      ["fire", "火之石"],
+    ]) {
+      root.appendChild(makeEvolutionButton(label, () => (
+        postEvolutionIntent("/api/evolution/stone", { stone })
+      )));
+    }
+  }
+}
+
+function ensureEvolutionControls() {
+  let root = document.getElementById("evolution-controls");
+  if (root) return root;
+
+  const goal = document.querySelector(".goal");
+  if (!goal) return null;
+  root = document.createElement("div");
+  root.id = "evolution-controls";
+  root.style.display = "flex";
+  root.style.flexWrap = "wrap";
+  root.style.gap = "8px";
+  root.style.marginTop = "10px";
+  goal.appendChild(root);
+  return root;
+}
+
+function makeEvolutionButton(label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await onClick();
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return button;
+}
+
+async function postEvolutionIntent(path, body) {
+  setStatus("提交中...");
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "提交失败");
+  setStatus("已提交");
+  await loadState();
 }
 
 function renderBox(view) {

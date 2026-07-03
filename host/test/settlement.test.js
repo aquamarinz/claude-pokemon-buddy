@@ -44,6 +44,47 @@ test("shield is consumed before breaking streak or decaying bond", () => {
   assert.equal(out.bond, 100);
 });
 
+test("care count decays by one for each completed daily settlement and never goes negative", () => {
+  const oneCare = settleDays(
+    { bond: 100, lastSettled: "2026-05-25", streak: 0, shield: 0, careCount: 1 },
+    "2026-05-27",
+    { usedDays: new Set(["2026-05-26"]) },
+  );
+  const noCare = settleDays(
+    { bond: 100, lastSettled: "2026-05-25", streak: 0, shield: 0, careCount: 0 },
+    "2026-05-27",
+    { usedDays: new Set(["2026-05-26"]) },
+  );
+
+  assert.equal(oneCare.careCount, 0);
+  assert.equal(noCare.careCount, 0);
+});
+
+test("active streak crossing 7-day multiples grants shields capped at two", () => {
+  const firstShield = settleDays(
+    { bond: 100, lastSettled: "2026-05-25", streak: 6, shield: 0 },
+    "2026-05-27",
+    { usedDays: new Set(["2026-05-26"]) },
+  );
+  const secondShield = settleDays(
+    { bond: 100, lastSettled: "2026-05-25", streak: 13, shield: 1 },
+    "2026-05-27",
+    { usedDays: new Set(["2026-05-26"]) },
+  );
+  const capped = settleDays(
+    { bond: 100, lastSettled: "2026-05-25", streak: 20, shield: 2 },
+    "2026-05-27",
+    { usedDays: new Set(["2026-05-26"]) },
+  );
+
+  assert.equal(firstShield.streak, 7);
+  assert.equal(firstShield.shield, 1);
+  assert.equal(secondShield.streak, 14);
+  assert.equal(secondShield.shield, 2);
+  assert.equal(capped.streak, 21);
+  assert.equal(capped.shield, 2);
+});
+
 test("caps catch-up at maxCatchupDays", () => {
   const pet = { bond: 200, lastSettled: "2026-01-01", streak: 0, shield: 0 };
 

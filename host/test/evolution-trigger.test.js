@@ -89,10 +89,10 @@ test("double-press KEY does not trigger evolution (short-only)", async () => {
   assert.equal(state.pendingCandidates, undefined);
 });
 
-test("KEY stores pending candidates when multiple branches are eligible", async () => {
+test("KEY stores pending candidates when no-care environmental branches conflict", async () => {
   const statePath = join("out", "test-pending-evolve-state.json");
   const framePath = join("out", "test-pending-evolve-frame.png");
-  writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 1 });
+  writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 0 });
 
   const state = await runOneTick({
     usage: usageWithTokens(0),
@@ -107,10 +107,38 @@ test("KEY stores pending candidates when multiple branches are eligible", async 
   assert.equal(state.species, "eevee");
   assert.equal(state.readyToEvolve, true);
   assert.deepEqual(state.pendingCandidates.map(({ to }) => to), [
-    "sylveon",
     "espeon",
     "leafeon",
   ]);
+});
+
+test("queued choice intent evolves a currently eligible pending branch on the next tick", async () => {
+  const statePath = join("out", "test-choice-leafeon-state.json");
+  const framePath = join("out", "test-choice-leafeon-frame.png");
+  writeState(statePath, {
+    bond: 160,
+    readyToEvolve: true,
+    pendingCandidates: [
+      { to: "espeon", needs: { bond: 56, daytime: true }, priority: 2 },
+      { to: "leafeon", needs: { bond: 56, warmHumid: true }, priority: 3 },
+    ],
+  });
+  const evolutionIntents = intentQueue([{ type: "choose", to: "leafeon" }]);
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 24, humidity: 70 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath, sensor: { t: 24, h: 70 } }),
+    evolutionIntents,
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "leafeon");
+  assert.equal(state.readyToEvolve, false);
+  assert.equal(state.pendingCandidates, undefined);
 });
 
 test("stone overrides RTC branch when KEY triggers evolution", async () => {
@@ -286,5 +314,17 @@ function weather({ temp, humidity }) {
     precip: 30,
     wind: 11,
     humidity,
+  };
+}
+
+function intentQueue(initial = []) {
+  const items = [...initial];
+  return {
+    push(intent) {
+      items.push(intent);
+    },
+    drain() {
+      return items.splice(0);
+    },
   };
 }

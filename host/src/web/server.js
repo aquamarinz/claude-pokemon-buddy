@@ -6,18 +6,28 @@ import { fileURLToPath } from "node:url";
 import { validateSettings } from "./settings.js";
 
 const DEFAULT_PUBLIC_DIR = fileURLToPath(new URL("./public", import.meta.url));
+const EVOLUTION_STONES = new Set(["water", "thunder", "fire"]);
 
 export function startWebServer({
   host = "127.0.0.1",
   port = 0,
   getView = () => ({}),
   saveSettings = () => {},
+  chooseEvolution = () => {},
+  grantEvolutionStone = () => {},
   framePath = "out/frame.png",
   publicDir = DEFAULT_PUBLIC_DIR,
 } = {}) {
   const server = http.createServer(async (req, res) => {
     try {
-      await routeRequest(req, res, { getView, saveSettings, framePath, publicDir });
+      await routeRequest(req, res, {
+        getView,
+        saveSettings,
+        chooseEvolution,
+        grantEvolutionStone,
+        framePath,
+        publicDir,
+      });
     } catch (error) {
       respondJson(res, 500, { error: error.message });
     }
@@ -68,6 +78,49 @@ async function routeRequest(req, res, context) {
 
     await context.saveSettings(result.value);
     respondJson(res, 200, { ok: true, settings: result.value });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/evolution/choose") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (error) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+
+    if (typeof body.to !== "string" || body.to.length === 0) {
+      respondJson(res, 400, { error: "invalid evolution target" });
+      return;
+    }
+
+    try {
+      await context.chooseEvolution(body.to);
+    } catch (error) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+    respondJson(res, 200, { ok: true, to: body.to });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/evolution/stone") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (error) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+
+    if (!EVOLUTION_STONES.has(body.stone)) {
+      respondJson(res, 400, { error: "invalid evolution stone" });
+      return;
+    }
+
+    await context.grantEvolutionStone(body.stone);
+    respondJson(res, 200, { ok: true, stone: body.stone });
     return;
   }
 

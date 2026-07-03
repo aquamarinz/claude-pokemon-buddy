@@ -75,6 +75,18 @@ export function createActionQueue() {
   };
 }
 
+export function createEvolutionIntentQueue() {
+  const intents = [];
+  return {
+    push(intent) {
+      intents.push(intent);
+    },
+    drain() {
+      return intents.splice(0);
+    },
+  };
+}
+
 export function createButtonDispatcher({
   transport,
   getPet = () => undefined,
@@ -136,6 +148,7 @@ export async function runOneTick({
   evolutionDelay,
   onRenderModel,
   pendingButtons,
+  evolutionIntents,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
@@ -145,6 +158,7 @@ export async function runOneTick({
   const buttonEvents = Array.isArray(pendingButtons)
     ? [...pendingButtons]
     : collectStandaloneButtonSnapshot(activeTransport);
+  const evolutionIntentEvents = drainEvolutionIntents(evolutionIntents);
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
   pet = settleDays(pet, today, {
@@ -159,14 +173,34 @@ export async function runOneTick({
     pet = { ...pet, careCount: Math.max(0, Number(pet.careCount ?? 0)) + 1 };
   }
 
+  let evolutionAnimation = null;
+  let choiceEvolved = false;
+  for (const intent of evolutionIntentEvents) {
+    if (intent?.type === "stone" && isEvolutionStone(intent.stone)) {
+      pet = { ...pet, stone: intent.stone };
+    } else if (intent?.type === "choose" && typeof intent.to === "string") {
+      const choice = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }))
+        .candidates
+        .find((candidate) => candidate.to === intent.to);
+      if (choice) {
+        const fromSpecies = pet.species;
+        pet = evolvePet(pet, choice.to);
+        evolutionAnimation = { fromSpecies, toSpecies: choice.to };
+        choiceEvolved = true;
+        break;
+      }
+    }
+  }
+
   // Table-driven: resolve once against the evolution tables, recompute readiness
   // every tick (can fall back to false), and reuse the same resolution for KEY.
-  const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
+  const evolution = choiceEvolved
+    ? { auto: null, candidates: [] }
+    : resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
   const readyToEvolve = Boolean(evolution.auto || evolution.candidates.length > 0);
   pet = { ...pet, readyToEvolve };
 
-  let evolutionAnimation = null;
-  if (readyToEvolve && hasKeyPress(buttonEvents)) {
+  if (!choiceEvolved && readyToEvolve && hasKeyPress(buttonEvents)) {
     if (evolution.auto) {
       const fromSpecies = pet.species;
       const toSpecies = evolution.auto;
@@ -256,6 +290,7 @@ export async function main({
   let resolveLoopSleep = null;
   let runtime = {};
   const actions = createActionQueue();
+  const evolutionIntents = createEvolutionIntentQueue();
   const buttonDispatcher = createButtonDispatcher({
     transport,
     getPet: () => runtime.pet,
@@ -274,6 +309,7 @@ export async function main({
         getRuntime: () => runtime,
         getConfig: () => config,
         setConfig: (next) => { config = next; },
+        evolutionIntents,
       })
     : null;
 
@@ -316,6 +352,7 @@ export async function main({
             transport,
             onRenderModel: (model) => { currentModel = model; },
             pendingButtons,
+            evolutionIntents,
           });
         } catch (error) {
           buttonDispatcher.requeueForRetry(pendingButtons);
@@ -388,6 +425,7 @@ export function startDashboardServer({
   getRuntime = () => ({}),
   getConfig = () => loadConfig(configPath),
   setConfig = () => {},
+  evolutionIntents = createEvolutionIntentQueue(),
 } = {}) {
   return startWebServer({
     host,
@@ -418,6 +456,18 @@ export function startDashboardServer({
       setConfig(next);
       saveConfig(configPath, next);
       return result.value;
+    },
+    chooseEvolution: (to) => {
+      const runtime = getRuntime();
+      const pet = runtime.pet ?? loadState(statePath);
+      const pending = Array.isArray(pet.pendingCandidates) ? pet.pendingCandidates : [];
+      if (!pending.some((candidate) => candidate?.to === to)) {
+        throw new Error("evolution candidate is not pending");
+      }
+      evolutionIntents.push({ type: "choose", to });
+    },
+    grantEvolutionStone: (stone) => {
+      evolutionIntents.push({ type: "stone", stone });
     },
   });
 }
@@ -533,6 +583,16 @@ async function loadWeatherSnapshot(weatherClient, config) {
 
 function hasKeyPress(events) {
   return events.some((event) => event?.key === "KEY" && event?.kind === "short");
+}
+
+function drainEvolutionIntents(evolutionIntents) {
+  if (!evolutionIntents || typeof evolutionIntents.drain !== "function") return [];
+  const drained = evolutionIntents.drain();
+  return Array.isArray(drained) ? drained : [];
+}
+
+function isEvolutionStone(stone) {
+  return stone === "water" || stone === "thunder" || stone === "fire";
 }
 
 function evolutionContext({ pet, weather, room, now }) {

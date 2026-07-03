@@ -24,6 +24,8 @@ export function resolveEvolution(species, ctx = {}) {
 
   const stone = ctx.stone ? candidates.find((branch) => branch.needs.stone === ctx.stone) : null;
   if (stone) return { auto: stone.to, candidates };
+  const care = candidates.find((branch) => branch.priority === 1 && branch.needs?.care === true);
+  if (care) return { auto: care.to, candidates };
   if (candidates.length === 1) return { auto: candidates[0].to, candidates };
 
   return { auto: null, candidates };

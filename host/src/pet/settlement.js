@@ -13,10 +13,13 @@ export function settleDays(
   let bond = pet.bond;
   let streak = pet.streak;
   let shield = pet.shield;
+  let careCount = Math.max(0, Number(pet.careCount ?? 0));
 
   for (const day of days) {
+    careCount = Math.max(0, careCount - 1);
     if (usedDays.has(day)) {
       streak += 1;
+      if (streak % 7 === 0) shield = Math.min(2, shield + 1);
     } else if (shield > 0) {
       shield -= 1;
     } else {
@@ -25,7 +28,7 @@ export function settleDays(
     }
   }
 
-  return { ...pet, bond, streak, shield, lastSettled: days.at(-1) };
+  return { ...pet, bond, streak, shield, careCount, lastSettled: days.at(-1) };
 }
 
 export function settlementWindow(lastSettled, today, maxCatchupDays = 30) {
