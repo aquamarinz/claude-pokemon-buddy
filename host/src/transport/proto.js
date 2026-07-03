@@ -1,4 +1,7 @@
 export const MAGIC = 0xA5;
+export const PROTO_VER = 1;
+export const SND_COUNT = 21;
+export const MAX_INBOUND_PAYLOAD = 30016;
 export const T = {
   FRAME: 0x01,
   SOUND_LOAD: 0x02,

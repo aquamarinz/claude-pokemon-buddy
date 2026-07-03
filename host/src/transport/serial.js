@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { SerialPort as NodeSerialPort } from "serialport";
 
-import { decodeFrame, encodeFrame, MAGIC, T } from "./proto.js";
+import { decodeFrame, encodeFrame, MAGIC, PROTO_VER, SND_COUNT, T } from "./proto.js";
 
 const ESPRESSIF_VID = "303A";
 const DEFAULT_BAUD_RATE = 115200;
@@ -69,6 +69,7 @@ export function makeTransport({
   reconnectDelayMs = 1500,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
+  logger = console,
 } = {}) {
   if (!port) throw new Error("port is required");
 
@@ -83,6 +84,9 @@ export function makeTransport({
   let detachPort = () => {};
   let nextSeq = 0;
   let latestSensor = null;
+  let latestHello = null;
+  let warnedProtoMismatch = false;
+  let warnedSoundMismatch = false;
 
   attachPort(port);
 
@@ -122,11 +126,7 @@ export function makeTransport({
     clearTimeout(current.timer);
     current.timer = setTimeout(() => {
       if (pending !== current) return;
-      if (current.sends <= maxRetries) {
-        sendPending();
-        return;
-      }
-      finishPending({ ok: false, stale: true, seq: current.seq });
+      retryPendingOrFinish(current);
     }, retryTimeoutFor(current.payload.length));
     try {
       currentPort.write(bytes, (error) => {
@@ -180,12 +180,18 @@ export function makeTransport({
     }
 
     if (frame.type === T.NACK) {
-      if (pending && ackSeq(frame) === pending.seq) sendPending();
+      if (pending && ackSeq(frame) === pending.seq) retryPendingOrFinish(pending);
+      return;
+    }
+
+    if (frame.type === T.HELLO) {
+      handleHello(frame.payload);
       return;
     }
 
     if (frame.type === T.BUTTON) {
-      events.emit("button", parseButton(frame.payload));
+      const button = parseButton(frame.payload);
+      if (button) events.emit("button", button);
       return;
     }
 
@@ -201,6 +207,29 @@ export function makeTransport({
     pending = null;
     current.resolve(result);
     pump();
+  }
+
+  function retryPendingOrFinish(current) {
+    if (pending !== current) return;
+    if (current.sends <= maxRetries) {
+      sendPending();
+      return;
+    }
+    finishPending({ ok: false, stale: true, seq: current.seq });
+  }
+
+  function handleHello(payload) {
+    const hello = parseHello(payload);
+    if (!hello) return;
+    latestHello = hello;
+    if (hello.protoVer !== PROTO_VER && !warnedProtoMismatch) {
+      warnedProtoMismatch = true;
+      logger?.warn?.(`ESP firmware protocol version ${hello.protoVer} does not match host protocol version ${PROTO_VER}`);
+    }
+    if (hello.sndCount < SND_COUNT && !warnedSoundMismatch) {
+      warnedSoundMismatch = true;
+      logger?.warn?.(`ESP firmware sound table has ${hello.sndCount} sounds; host requires ${SND_COUNT}`);
+    }
   }
 
   function handleDisconnect() {
@@ -327,6 +356,9 @@ export function makeTransport({
     feedSensor() {
       return latestSensor ? { ...latestSensor } : null;
     },
+    getHello() {
+      return latestHello ? { ...latestHello } : null;
+    },
     close() {
       stopped = true;
       connected = false;
@@ -368,9 +400,18 @@ function removeListener(emitter, eventName, listener) {
 }
 
 function parseButton(payload) {
+  if (payload.length < 2) return null;
   return {
     key: BUTTON_KEYS.get(payload[0]) ?? `KEY_${payload[0]}`,
     kind: BUTTON_KINDS.get(payload[1]) ?? `evt_${payload[1]}`,
+  };
+}
+
+function parseHello(payload) {
+  if (payload.length < 2) return null;
+  return {
+    protoVer: payload[0],
+    sndCount: payload[1],
   };
 }
 

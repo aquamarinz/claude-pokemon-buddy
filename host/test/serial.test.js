@@ -77,6 +77,52 @@ test("incoming BUTTON and SENSOR frames dispatch callbacks", () => {
   assert.deepEqual(transport.feedSensor(), { t: 23.4, h: 56 });
 });
 
+test("malformed BUTTON payloads are ignored instead of emitting null events (RL7)", () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port });
+  const buttons = [];
+
+  transport.onButton((event) => buttons.push(event));
+  port.emitData(encodeFrame({ type: T.BUTTON, seq: 9, payload: Uint8Array.from([]) }));
+  port.emitData(encodeFrame({ type: T.BUTTON, seq: 10, payload: Uint8Array.from([1]) }));
+
+  assert.deepEqual(buttons, []);
+  transport.close();
+});
+
+test("incoming HELLO stores firmware protocol info and stays queryable (RM8)", () => {
+  const port = new FakePort();
+  const warnings = [];
+  const transport = makeTransport({
+    port,
+    logger: { warn: (message) => warnings.push(String(message)) },
+  });
+
+  port.emitData(encodeFrame({ type: T.HELLO, seq: 0, payload: Uint8Array.from([1, 21]) }));
+
+  assert.deepEqual(transport.getHello(), { protoVer: 1, sndCount: 21 });
+  assert.deepEqual(warnings, []);
+  transport.close();
+});
+
+test("HELLO protocol mismatches are warned once per mismatch kind (RM8)", () => {
+  const port = new FakePort();
+  const warnings = [];
+  const transport = makeTransport({
+    port,
+    logger: { warn: (message) => warnings.push(String(message)) },
+  });
+
+  port.emitData(encodeFrame({ type: T.HELLO, seq: 0, payload: Uint8Array.from([2, 20]) }));
+  port.emitData(encodeFrame({ type: T.HELLO, seq: 0, payload: Uint8Array.from([2, 20]) }));
+
+  assert.deepEqual(transport.getHello(), { protoVer: 2, sndCount: 20 });
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /protocol/i);
+  assert.match(warnings[1], /sound/i);
+  transport.close();
+});
+
 test("pushFrame resends on timeout and resolves stale after max retries", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const port = new FakePort();
@@ -89,6 +135,26 @@ test("pushFrame resends on timeout and resolves stale after max retries", async 
 
   assert.equal(port.writes.length, 3);
   assert.deepEqual(await result, { ok: false, stale: true, seq: 0 });
+});
+
+test("NACK retries count toward maxRetries and eventually resolve stale (RL9)", async () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port, maxRetries: 2 });
+
+  const result = transport.pushFrame(Uint8Array.from([9]));
+  assert.equal(port.writes.length, 1);
+  let frame = decodeFrame(port.writes.at(-1));
+
+  port.emitData(encodeFrame({ type: T.NACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+  assert.equal(port.writes.length, 2);
+  frame = decodeFrame(port.writes.at(-1));
+
+  port.emitData(encodeFrame({ type: T.NACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+  assert.equal(port.writes.length, 3);
+  frame = decodeFrame(port.writes.at(-1));
+
+  port.emitData(encodeFrame({ type: T.NACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+  assert.deepEqual(await withTimeout(result, 20), { ok: false, stale: true, seq: 0 });
 });
 
 test("close resolves an in-flight pushFrame as disconnected (RH2)", async () => {
