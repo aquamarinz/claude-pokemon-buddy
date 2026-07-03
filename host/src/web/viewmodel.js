@@ -1,4 +1,4 @@
-import { PARAMS } from "../pet/sim.js";
+import { deriveMood, PARAMS } from "../pet/sim.js";
 
 export function toDashboardView({ pet, usage, weather, sensors, journey, secrets, config }) {
   return {
@@ -50,6 +50,88 @@ export function toDashboardView({ pet, usage, weather, sensors, journey, secrets
     },
     difficulty: "NORMAL · 锁定",
   };
+}
+
+export function toDashboardRuntimeView({ pet: petState, usage, weather, room, config }) {
+  const pet = dashboardPet(petState, usage);
+  const view = toDashboardView({
+    pet,
+    usage: dashboardUsage(usage, pet),
+    weather,
+    sensors: dashboardSensors(room),
+    journey: dashboardJourney(pet),
+    secrets: dashboardSecrets(pet),
+    config,
+  });
+  return {
+    ...view,
+    box: Array.isArray(config.box) && config.box.length > 0 ? config.box : [pet.species],
+  };
+}
+
+export function dashboardPet(pet, usage) {
+  const normalized = {
+    species: "eevee",
+    level: 1,
+    exp: 0,
+    bond: 0,
+    streak: 0,
+    ...pet,
+  };
+  return {
+    ...normalized,
+    mood: normalized.mood ?? deriveMood(dashboardUsage(usage, normalized)),
+    nature: normalized.nature ?? "—",
+    iv: Array.isArray(normalized.iv) ? normalized.iv : [],
+    characteristic: normalized.characteristic ?? "—",
+    badges: Array.isArray(normalized.badges) ? normalized.badges : dashboardBadges(normalized),
+  };
+}
+
+export function dashboardUsage(usage, pet = {}) {
+  return {
+    p5h: null,
+    pweek: null,
+    todayCost: null,
+    todayTokens: null,
+    streak: pet.streak ?? 0,
+    modelled: false,
+    ...usage,
+  };
+}
+
+export function dashboardSensors(room) {
+  const r = room ?? {};
+  return {
+    roomT: r.roomT ?? r.t ?? null,
+    roomH: r.roomH ?? r.h ?? null,
+  };
+}
+
+export function dashboardJourney(pet) {
+  if (Array.isArray(pet.journey)) return pet.journey;
+  const date = pet.lastGrowthDay ?? pet.lastSettled;
+  return date ? [{ date, text: `亲密度 ${pet.bond}` }] : [];
+}
+
+export function dashboardSecrets(pet) {
+  const source = pet.secrets ?? {};
+  const discovered = Array.isArray(source.discovered)
+    ? source.discovered
+    : Array.isArray(pet.discoveredSecrets)
+      ? pet.discoveredSecrets
+      : [];
+  return {
+    discovered,
+    total: Number.isFinite(source.total) ? source.total : 12,
+  };
+}
+
+export function dashboardBadges(pet) {
+  const badges = [];
+  if ((pet.streak ?? 0) >= 7) badges.push("7d");
+  if ((pet.bond ?? 0) >= PARAMS.evolveBond) badges.push("EVO");
+  return badges;
 }
 
 function normalizeCandidates(candidates) {

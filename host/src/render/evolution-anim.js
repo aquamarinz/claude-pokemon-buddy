@@ -3,11 +3,10 @@ import { createCanvas } from "@napi-rs/canvas";
 import { zhName } from "../pet/species-meta.js";
 import { SOUND } from "../transport/proto.js";
 import { imageDataToFrame } from "./frame.js";
-import { drawSprite } from "./layout.js";
 import { H, INK, PAPER, W } from "./palette.js";
+import { drawSprite, line, px } from "./sprite-pipeline.js";
 import { loadBuddySprite } from "./sprites.js";
 
-const MONO = '"Zpix"';
 const ALT_GAPS = [420, 360, 300, 250, 210, 170, 140, 110];
 
 export async function playEvolutionAnimation({ transport, fromSpecies, toSpecies, delay = realDelay }) {
@@ -94,23 +93,6 @@ function rays(g, cx, cy, inner, outer, count) {
     );
   }
   g.restore();
-}
-
-function px(g, t, x, y, size, align = "left", weight = 700) {
-  g.font = `${weight} ${size}px ${MONO}`;
-  g.textBaseline = "alphabetic";
-  // Zpix 过 1-bit 阈值需左边缘落整数像素 (center/right 半像素错位会碎裂)
-  g.textAlign = "left";
-  const width = align === "left" ? 0 : g.measureText(t).width;
-  const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
-  g.fillText(t, Math.round(left), Math.round(y));
-}
-
-function line(g, x1, y1, x2, y2) {
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(x2, y2);
-  g.stroke();
 }
 
 function realDelay(ms) {

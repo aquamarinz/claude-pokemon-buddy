@@ -58,6 +58,53 @@ test("settings form reports half-filled quiet hours and posts empty-name reset",
   assert.equal(posted[0].name, "");
 });
 
+test("renderSettings does not overwrite focused form edits", async () => {
+  const { context } = await loadApp();
+  const field = (id) => context.document.getElementById(id);
+  const form = field("settings-form");
+  const name = field("settings-name");
+  const volume = field("settings-volume");
+
+  form.contains = (element) => element === name;
+  name.value = "typing";
+  volume.value = "33";
+  context.document.activeElement = name;
+
+  context.renderSettings({
+    name: "Server Buddy",
+    quietHours: { start: 22, end: 8 },
+    volume: 99,
+    lat: 1.25,
+    lon: 2.5,
+  });
+
+  assert.equal(name.value, "typing");
+  assert.equal(volume.value, "33");
+});
+
+test("renderSettings leaves the active input alone when updating settings fields", async () => {
+  const { context, elements } = await loadApp();
+  const field = (id) => context.document.getElementById(id);
+  const name = field("settings-name");
+
+  name.value = "typing";
+  context.document.activeElement = name;
+
+  context.renderSettings({
+    name: "Server Buddy",
+    quietHours: { start: 21, end: 7 },
+    volume: 44,
+    lat: -36.85,
+    lon: 174.76,
+  });
+
+  assert.equal(name.value, "typing");
+  assert.equal(field("quiet-start").value, 21);
+  assert.equal(field("quiet-end").value, 7);
+  assert.equal(field("settings-volume").value, 44);
+  assert.equal(elements.get("volume-value").textContent, "44");
+});
+
 async function loadApp({ posted = [] } = {}) {
   const elements = new Map();
   const document = {

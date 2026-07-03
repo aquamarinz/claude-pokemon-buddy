@@ -252,6 +252,32 @@ test("POST /api/settings with an empty body is rejected and does not save", asyn
   }
 });
 
+test("POST /api/settings rejects malformed JSON body", async () => {
+  let saved = 0;
+  const srv = await startWebServer({
+    host: "127.0.0.1",
+    port: 0,
+    saveSettings: () => {
+      saved += 1;
+    },
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/api/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{bad-json",
+    });
+    const json = await res.json();
+
+    assert.equal(res.status, 400);
+    assert.match(json.error, /invalid JSON body/i);
+    assert.equal(saved, 0);
+  } finally {
+    await srv.close();
+  }
+});
+
 test("GET /frame.png mirrors configured frame file", async () => {
   const framePath = join("out", `test-web-frame-${randomUUID()}.png`);
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -277,6 +303,26 @@ test("GET /frame.png mirrors configured frame file", async () => {
   }
 });
 
+test("GET /frame.png returns 404 when the configured frame file is missing", async () => {
+  const framePath = join("out", `missing-web-frame-${randomUUID()}.png`);
+  rmSync(framePath, { force: true });
+  const srv = await startWebServer({
+    host: "127.0.0.1",
+    port: 0,
+    framePath,
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/frame.png`);
+    const json = await res.json();
+
+    assert.equal(res.status, 404);
+    assert.match(json.error, /not found/i);
+  } finally {
+    await srv.close();
+  }
+});
+
 test("GET /sprites/:id serves only whitelisted local sprite assets", async () => {
   const srv = await startWebServer({
     host: "127.0.0.1",
@@ -292,6 +338,24 @@ test("GET /sprites/:id serves only whitelisted local sprite assets", async () =>
 
     const unknown = await fetch(`http://127.0.0.1:${srv.port}/sprites/missingno`);
     assert.equal(unknown.status, 404);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("unknown routes return JSON 404", async () => {
+  const srv = await startWebServer({
+    host: "127.0.0.1",
+    port: 0,
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/nope`);
+    const json = await res.json();
+
+    assert.equal(res.status, 404);
+    assert.match(res.headers.get("content-type"), /application\/json/);
+    assert.match(json.error, /not found/i);
   } finally {
     await srv.close();
   }

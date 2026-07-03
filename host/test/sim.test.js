@@ -28,7 +28,7 @@ test("applyDailyGrowth caps EXP gain and bond gain per day", () => {
   assert.equal(out.expGain, PARAMS.dailyExpCap);
   assert.equal(out.level, 2);
   assert.equal(out.exp, 90);
-  assert.ok(out.bond <= pet.bond + PARAMS.dailyBondCap);
+  assert.ok(out.bond <= pet.bond + PARAMS.bondPerActiveDay);
 });
 
 test("newborn does not retroactively level up from pre-birth usage on its birth day", () => {
@@ -63,7 +63,7 @@ test("applyDailyGrowth treats future lastGrowthDay as same-day date regression",
     bond: 20,
     lastGrowthDay: "2026-06-18",
     todayCreditedExp: PARAMS.dailyExpCap,
-    todayCreditedBond: PARAMS.dailyBondCap,
+    todayCreditedBond: PARAMS.bondPerActiveDay,
   };
 
   const out = applyDailyGrowth(pet, { todayTokens: 99_999_999, today: "2026-06-17" });
@@ -74,7 +74,7 @@ test("applyDailyGrowth treats future lastGrowthDay as same-day date regression",
   assert.equal(out.bond, 20);
   assert.equal(out.lastGrowthDay, "2026-06-18");
   assert.equal(out.todayCreditedExp, PARAMS.dailyExpCap);
-  assert.equal(out.todayCreditedBond, PARAMS.dailyBondCap);
+  assert.equal(out.todayCreditedBond, PARAMS.bondPerActiveDay);
 });
 
 test("applyDailyGrowth requires an explicit local today", () => {

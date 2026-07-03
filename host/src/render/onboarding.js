@@ -2,24 +2,13 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 import { H, INK, PAPER, W } from "./palette.js";
 import { imageDataToFrame } from "./frame.js";
-import { ZPIX_FONT_PATH, drawSprite } from "./layout.js";
+import { ZPIX_FONT_PATH } from "./layout.js";
+import { drawSprite, line, px } from "./sprite-pipeline.js";
 import { loadBuddySprite, loadOakSprite } from "./sprites.js";
 
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
-const MONO = '"Zpix"';
 
 const HATCH_FRAMES = 12;
-
-function px(g, t, x, y, size, align = "left", weight = 700) {
-  g.font = `${weight} ${size}px ${MONO}`;
-  g.textBaseline = "alphabetic";
-  // Zpix 点阵字过 1-bit 阈值时, 左边缘必须落在整数像素, 否则 center/right 的半像素错位→抗锯齿→碎裂。
-  // 自己算左边缘并 round, 用 left 对齐画。
-  g.textAlign = "left";
-  const width = align === "left" ? 0 : g.measureText(t).width;
-  const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
-  g.fillText(t, Math.round(left), Math.round(y));
-}
 
 export async function renderOnboarding(scene) {
   const canvas = createCanvas(W, H);
@@ -328,11 +317,4 @@ function critter(g, cx, cy) {
   g.fill();
   g.restore();
   g.fillStyle = INK;
-}
-
-function line(g, x1, y1, x2, y2) {
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(x2, y2);
-  g.stroke();
 }

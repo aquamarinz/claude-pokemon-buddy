@@ -2,7 +2,6 @@ export const PARAMS = {
   dailyExpCap: 100,
   expPerKTok: 2,
   levelExp: 100,
-  dailyBondCap: 6,
   bondPerActiveDay: 4,
   bondSoftCap: 180,
   evolveBond: 56,
@@ -57,6 +56,6 @@ function dailyGrowthCredit(todayTokens) {
       PARAMS.dailyExpCap,
       Math.floor(tokens / 1000) * PARAMS.expPerKTok,
     ),
-    bond: tokens > 0 ? Math.min(PARAMS.dailyBondCap, PARAMS.bondPerActiveDay) : 0,
+    bond: tokens > 0 ? PARAMS.bondPerActiveDay : 0,
   };
 }
