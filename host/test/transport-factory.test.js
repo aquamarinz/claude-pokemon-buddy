@@ -7,6 +7,23 @@ import { runOneTick } from "../src/index.js";
 import { rleDecode } from "../src/transport/proto.js";
 import { createTransport } from "../src/transport/index.js";
 
+test("createTransport logs mock fallback once", async () => {
+  const warnings = [];
+  const logger = { warn: (message) => warnings.push(String(message)) };
+
+  await createTransport({
+    serialTransportFactory: async () => null,
+    logger,
+  });
+  await createTransport({
+    serialTransportFactory: async () => null,
+    logger,
+  });
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /mock transport/);
+});
+
 test("createTransport falls back to mock when no ESP serial port is found", async () => {
   const framePath = join("out", "test-factory-mock.png");
   rmSync(framePath, { force: true });

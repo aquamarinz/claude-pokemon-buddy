@@ -265,6 +265,7 @@ export async function main({
   transport: injectedTransport,
   weatherClient: injectedWeatherClient,
   pollUsage = pollUsageOnce,
+  logger = console,
 } = {}) {
   let config = loadConfig(configPath);
   const transport = injectedTransport ?? await createTransport({ framePath });
@@ -289,6 +290,7 @@ export async function main({
   let timer = null;
   let resolveLoopSleep = null;
   let runtime = {};
+  let lastPollUsageFailureReason = null;
   const actions = createActionQueue();
   const evolutionIntents = createEvolutionIntentQueue();
   const buttonDispatcher = createButtonDispatcher({
@@ -336,7 +338,16 @@ export async function main({
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
         const selected = usageForDisplay(snapshot, lastKnownUsage);
         lastKnownUsage = selected.lastKnown;
-        await pollUsage().catch(() => {});
+        const pollResult = await pollUsage().catch((error) => ({
+          ok: false,
+          reason: errorReason(error),
+        }));
+        lastPollUsageFailureReason = logFailureReasonTransition({
+          result: pollResult,
+          lastReason: lastPollUsageFailureReason,
+          logger,
+          label: "pollUsage",
+        });
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
         const room = transport.feedSensor();
@@ -629,6 +640,24 @@ function isWarmHumid(temp, humidity) {
 
 function isCold(temp) {
   return typeof temp === "number" && temp <= 4;
+}
+
+function logFailureReasonTransition({ result, lastReason, logger, label }) {
+  const reason = failureReason(result);
+  if (!reason) return null;
+  if (reason !== lastReason) logger?.warn?.(`${label} failed: ${reason}`);
+  return reason;
+}
+
+function failureReason(result) {
+  if (result?.ok !== false) return null;
+  return typeof result.reason === "string" && result.reason.length > 0
+    ? result.reason
+    : "unknown";
+}
+
+function errorReason(error) {
+  return error?.message ? error.message : "error";
 }
 
 function dashboardPet(pet, usage) {

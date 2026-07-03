@@ -13,13 +13,14 @@ const dailyJson = readFileSync(
 );
 const blocksFixture = JSON.parse(blocksJson);
 const dailyFixture = JSON.parse(dailyJson);
+const fixtureToday = dailyFixture.daily.at(-1).period;
 
 test("normalizeUsage outputs cost/token and leaves percent null (rate-limits owns %)", () => {
   const lastDaily = dailyFixture.daily.at(-1);
   const weekTokens = dailyFixture.daily
     .slice(-7)
     .reduce((sum, day) => sum + day.totalTokens, 0);
-  const u = normalizeUsage({ blocksJson, dailyJson });
+  const u = normalizeUsage({ blocksJson, dailyJson, today: fixtureToday });
 
   assert.equal(u.p5h, null);
   assert.equal(u.pweek, null);
@@ -34,10 +35,19 @@ test("normalizeUsage surfaces activeDays (periods with usage)", () => {
   const expected = dailyFixture.daily
     .filter((day) => day.totalTokens > 0)
     .map((day) => day.period);
-  const u = normalizeUsage({ blocksJson, dailyJson });
+  const u = normalizeUsage({ blocksJson, dailyJson, today: fixtureToday });
 
   assert.deepEqual(u.activeDays, expected);
   assert.equal(u.activeDays.at(-1), dailyFixture.daily.at(-1).period);
+});
+
+test("normalizeUsage zeroes today fields when latest daily period is stale", () => {
+  const u = normalizeUsage({ blocksJson, dailyJson, today: "2026-05-31" });
+
+  assert.equal(u.todayPeriod, fixtureToday);
+  assert.equal(u.todayTokens, 0);
+  assert.equal(u.todayCost, 0);
+  assert.ok(u.weekTokens > 0);
 });
 
 test("usageForDisplay degraded with no last-known reports activeDays null", () => {

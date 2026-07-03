@@ -21,9 +21,9 @@ test("deriveMood treats unknown (null/undefined) utilization as neutral, not hap
 });
 
 test("applyDailyGrowth caps EXP gain and bond gain per day", () => {
-  const pet = { level: 1, exp: 90, bond: 100 };
+  const pet = { level: 1, exp: 90, bond: 100, lastGrowthDay: "2026-06-17", todayCreditedExp: 0, todayCreditedBond: 0 };
 
-  const out = applyDailyGrowth(pet, { todayTokens: 99_999_999 });
+  const out = applyDailyGrowth(pet, { todayTokens: 99_999_999, today: "2026-06-17" });
 
   assert.equal(out.expGain, PARAMS.dailyExpCap);
   assert.equal(out.level, 2);
@@ -49,11 +49,39 @@ test("the day AFTER birth, the pet earns exp normally", () => {
 });
 
 test("applyDailyGrowth respects the daily bond soft cap", () => {
-  const pet = { level: 1, exp: 0, bond: PARAMS.bondSoftCap - 1 };
+  const pet = { level: 1, exp: 0, bond: PARAMS.bondSoftCap - 1, lastGrowthDay: "2026-06-17", todayCreditedExp: 0, todayCreditedBond: 0 };
 
-  const out = applyDailyGrowth(pet, { todayTokens: 10_000 });
+  const out = applyDailyGrowth(pet, { todayTokens: 10_000, today: "2026-06-17" });
 
   assert.equal(out.bond, PARAMS.bondSoftCap);
+});
+
+test("applyDailyGrowth treats future lastGrowthDay as same-day date regression", () => {
+  const pet = {
+    level: 2,
+    exp: 10,
+    bond: 20,
+    lastGrowthDay: "2026-06-18",
+    todayCreditedExp: PARAMS.dailyExpCap,
+    todayCreditedBond: PARAMS.dailyBondCap,
+  };
+
+  const out = applyDailyGrowth(pet, { todayTokens: 99_999_999, today: "2026-06-17" });
+
+  assert.equal(out.expGain, 0);
+  assert.equal(out.level, 2);
+  assert.equal(out.exp, 10);
+  assert.equal(out.bond, 20);
+  assert.equal(out.lastGrowthDay, "2026-06-18");
+  assert.equal(out.todayCreditedExp, PARAMS.dailyExpCap);
+  assert.equal(out.todayCreditedBond, PARAMS.dailyBondCap);
+});
+
+test("applyDailyGrowth requires an explicit local today", () => {
+  assert.throws(
+    () => applyDailyGrowth({ level: 1, exp: 0, bond: 0 }, { todayTokens: 1_000 }),
+    /today is required/,
+  );
 });
 
 test("evolveBond is the ~2-week-from-zero threshold (56)", () => {

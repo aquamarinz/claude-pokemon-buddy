@@ -6,14 +6,20 @@ import { createMockTransport } from "./mock.js";
 import { rleEncode } from "./proto.js";
 import { createSerialTransport } from "./serial.js";
 
+let loggedMockFallback = false;
+
 export async function createTransport({
   framePath = "out/frame.png",
   serialTransportFactory = createSerialTransport,
   mockFactory = createMockTransport,
+  logger = console,
   ...serialOptions
 } = {}) {
   const serial = await serialTransportFactory(serialOptions);
-  if (!serial) return wrapMockTransport(mockFactory({ framePath }));
+  if (!serial) {
+    logMockFallback(logger);
+    return wrapMockTransport(mockFactory({ framePath }));
+  }
   return wrapSerialTransport(serial, { framePath });
 }
 
@@ -39,6 +45,12 @@ function wrapMockTransport(mock) {
     },
     close() {},
   };
+}
+
+function logMockFallback(logger) {
+  if (loggedMockFallback) return;
+  loggedMockFallback = true;
+  logger?.warn?.("ESP serial port not found; using mock transport");
 }
 
 function wrapSerialTransport(serial, { framePath }) {

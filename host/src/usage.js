@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-export async function loadUsageSnapshot({ run = runCcusage } = {}) {
+export async function loadUsageSnapshot({ run = runCcusage, today = localYmd(new Date()) } = {}) {
   try {
     // --yes skips npx's first-run "Ok to proceed?" prompt. With stdin ignored
     // that prompt hangs forever and wedges the whole tick loop.
@@ -8,7 +8,7 @@ export async function loadUsageSnapshot({ run = runCcusage } = {}) {
     const dailyJson = await run("npx", ["--yes", "ccusage", "daily", "--json"]);
     return {
       ok: true,
-      ...normalizeUsage({ blocksJson, dailyJson }),
+      ...normalizeUsage({ blocksJson, dailyJson, today }),
     };
   } catch {
     return { ok: false };
@@ -50,7 +50,7 @@ export function usageForDisplay(snapshot, lastKnown = null) {
   };
 }
 
-export function normalizeUsage({ blocksJson, dailyJson }) {
+export function normalizeUsage({ blocksJson, dailyJson, today = localYmd(new Date()) }) {
   const blocksRoot = JSON.parse(blocksJson);
   const dailyRoot = JSON.parse(dailyJson);
   const blocks = arrayField(blocksRoot.blocks, "ccusage blocks schema drift");
@@ -63,8 +63,11 @@ export function normalizeUsage({ blocksJson, dailyJson }) {
   const weekTokens = daily
     .slice(-7)
     .reduce((sum, day) => sum + numberField(day.totalTokens, "daily.totalTokens"), 0);
-  const today = daily.at(-1);
-  const todayPeriod = stringField(today.period, "daily.period");
+  const latest = daily.at(-1);
+  const todayPeriod = stringField(latest.period, "daily.period");
+  const latestTokens = numberField(latest.totalTokens, "daily.totalTokens");
+  const latestCost = numberField(latest.totalCost, "daily.totalCost");
+  const latestIsToday = todayPeriod === today;
 
   const activeDays = daily
     .filter((day) => numberField(day.totalTokens, "daily.totalTokens") > 0)
@@ -81,8 +84,8 @@ export function normalizeUsage({ blocksJson, dailyJson }) {
     activeTokens,
     todayPeriod,
     activeDays,
-    todayTokens: numberField(today.totalTokens, "daily.totalTokens"),
-    todayCost: numberField(today.totalCost, "daily.totalCost"),
+    todayTokens: latestIsToday ? latestTokens : 0,
+    todayCost: latestIsToday ? latestCost : 0,
     weekTokens,
     perType: {},
   };
@@ -137,4 +140,11 @@ function numberField(value, label) {
 function stringField(value, label) {
   if (typeof value === "string" && value.length > 0) return value;
   throw new Error(`expected string: ${label}`);
+}
+
+function localYmd(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
