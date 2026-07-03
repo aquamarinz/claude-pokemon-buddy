@@ -77,14 +77,30 @@ test("incoming BUTTON and SENSOR frames dispatch callbacks", () => {
   assert.deepEqual(transport.feedSensor(), { t: 23.4, h: 56 });
 });
 
-test("pushFrame resends on timeout and resolves stale after max retries", async () => {
+test("pushFrame resends on timeout and resolves stale after max retries", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const port = new FakePort();
-  const transport = makeTransport({ port, timeoutMs: 5, maxRetries: 2 });
+  const transport = makeTransport({ port, maxRetries: 2 });
 
-  const result = await transport.pushFrame(Uint8Array.from([9]));
+  const result = transport.pushFrame(Uint8Array.from([9]));
+  t.mock.timers.tick(250);
+  t.mock.timers.tick(250);
+  t.mock.timers.tick(250);
 
   assert.equal(port.writes.length, 3);
-  assert.deepEqual(result, { ok: false, stale: true, seq: 0 });
+  assert.deepEqual(await result, { ok: false, stale: true, seq: 0 });
+});
+
+test("close resolves an in-flight pushFrame as disconnected (RH2)", async () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port, maxRetries: 0 });
+
+  const result = transport.pushFrame(Uint8Array.from([9]));
+  assert.equal(port.writes.length, 1);
+
+  transport.close();
+
+  assert.deepEqual(await withTimeout(result, 20), { ok: false, disconnected: true });
 });
 
 test("pushFrame resolves disconnected immediately after port close", async () => {
@@ -197,6 +213,71 @@ test("button and sensor callbacks remain active after reconnect", async () => {
   assert.deepEqual(buttons, [{ key: "BOOT", kind: "up" }]);
   assert.deepEqual(sensors, [{ t: 18.7, h: 44 }]);
   assert.deepEqual(transport.feedSensor(), { t: 18.7, h: 44 });
+  transport.close();
+});
+
+test("disconnect clears stale sensor state and the reconnected port ACKs normally (RM6)", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => port2,
+    reconnectDelayMs: 5,
+  });
+
+  port1.emitData(encodeFrame({ type: T.SENSOR, seq: 1, payload: sensorPayload(211, 51) }));
+  assert.deepEqual(transport.feedSensor(), { t: 21.1, h: 51 });
+
+  port1.emitClose();
+  await waitFor(() => port2.listenerCount("data") > 0);
+  assert.equal(transport.feedSensor(), null);
+
+  const sent = transport.pushFrame(Uint8Array.from([4]));
+  const frame = decodeFrame(port2.writes[0]);
+  port2.emitData(encodeFrame({ type: T.ACK, seq: frame.seq, payload: Uint8Array.from([frame.seq]) }));
+  assert.deepEqual(await sent, { ok: true, seq: 0 });
+  transport.close();
+});
+
+test("close during reconnect closes the freshly opened port instead of reviving transport (RM6)", async () => {
+  let releaseOpen;
+  const opening = new Promise((resolve) => { releaseOpen = resolve; });
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => {
+      await opening;
+      return port2;
+    },
+    reconnectDelayMs: 5,
+  });
+  let reconnects = 0;
+  transport.onReconnect(() => { reconnects += 1; });
+
+  port1.emitClose();
+  await sleep(10);
+  transport.close();
+  releaseOpen();
+  await sleep(10);
+
+  assert.equal(port2.closed, true);
+  assert.equal(port2.listenerCount("data"), 0);
+  assert.equal(reconnects, 0);
+});
+
+test("large payload retry timeout scales beyond the fixed 250ms window (RM9-host)", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const port = new FakePort();
+  const transport = makeTransport({ port, maxRetries: 1 });
+
+  transport.pushFrame(new Uint8Array(30 * 1024));
+
+  assert.equal(port.writes.length, 1);
+  t.mock.timers.tick(2069);
+  assert.equal(port.writes.length, 1);
+  t.mock.timers.tick(1);
+  assert.equal(port.writes.length, 2);
   transport.close();
 });
 
@@ -435,4 +516,14 @@ async function waitFor(predicate) {
     await sleep(2);
   }
   assert.equal(predicate(), true);
+}
+
+async function withTimeout(promise, ms) {
+  const timeout = Symbol("timeout");
+  const result = await Promise.race([
+    promise,
+    sleep(ms).then(() => timeout),
+  ]);
+  assert.notEqual(result, timeout);
+  return result;
 }

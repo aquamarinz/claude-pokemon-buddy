@@ -48,6 +48,7 @@ function crc32(b) {
 
 export function encodeFrame({ type, seq, payload }) {
   const len = payload.length;
+  if (len > 0xffff) throw new RangeError("payload length exceeds 65535 bytes");
   const head = Uint8Array.from([MAGIC, type, seq, len & 255, (len >> 8) & 255]);
   const body = new Uint8Array(head.length + len);
   body.set(head);

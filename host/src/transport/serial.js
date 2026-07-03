@@ -127,7 +127,7 @@ export function makeTransport({
         return;
       }
       finishPending({ ok: false, stale: true, seq: current.seq });
-    }, timeoutMs);
+    }, retryTimeoutFor(current.payload.length));
     try {
       currentPort.write(bytes, (error) => {
         if (error && pending === current) handleDisconnect();
@@ -207,6 +207,8 @@ export function makeTransport({
     if (!connected) return;
 
     connected = false;
+    rx = new Uint8Array(0);
+    latestSensor = null;
     detachPort();
     resolveDisconnected();
     if (openPort && !stopped) scheduleReconnect();
@@ -239,6 +241,11 @@ export function makeTransport({
       nextPort = await openPort();
     } catch {
       nextPort = null;
+    }
+
+    if (stopped) {
+      nextPort?.close?.();
+      return;
     }
 
     if (!nextPort) {
@@ -327,11 +334,15 @@ export function makeTransport({
       connected = false;
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
-      clearTimeout(pending?.timer);
+      resolveDisconnected();
       detachPort();
       currentPort.close?.();
     },
   };
+
+  function retryTimeoutFor(payloadLength) {
+    return Math.max(DEFAULT_TIMEOUT_MS, timeoutMs, 150 + Math.ceil(payloadLength / 16));
+  }
 }
 
 function normalizeVid(vendorId) {

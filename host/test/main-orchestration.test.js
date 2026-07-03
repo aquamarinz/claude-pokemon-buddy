@@ -30,7 +30,7 @@ test("runTickLoop runs the first tick, survives a throwing tick, and stops when 
   assert.equal(started, true); // beforeLoop ran after the first tick
 });
 
-function createBitmapMockTransport({ buttonsOnSubscribe = [] } = {}) {
+function createBitmapMockTransport({ buttonsOnSubscribe = [], onPush = () => {}, onClose = () => {} } = {}) {
   const emitter = new EventEmitter();
   return {
     onButton(callback) {
@@ -38,7 +38,8 @@ function createBitmapMockTransport({ buttonsOnSubscribe = [] } = {}) {
       for (const b of buttonsOnSubscribe) callback(b); // deliver pre-arrived presses on subscribe
       return () => emitter.off("button", callback);
     },
-    async push() {
+    async push(frame) {
+      await onPush(frame);
       return { ok: true };
     },
     feedSensor() {
@@ -46,9 +47,70 @@ function createBitmapMockTransport({ buttonsOnSubscribe = [] } = {}) {
     },
     playSound() {},
     setActiveCry() {},
-    close() {},
+    close() { onClose(); },
   };
 }
+
+test("main resolves when SIGINT stops the loop during its sleep (RH2)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-main-rh2-state.json");
+  const framePath = join("out", "test-main-rh2-frame.png");
+  const configPath = join("out", "test-main-rh2-config.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 0,
+      shield: 0,
+      lastSettled: "2026-05-30",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      nature: "Brave",
+      iv: [1, 2, 3, 4, 5, 6],
+      characteristic: "Likes to run",
+    }),
+  );
+
+  let closed = false;
+  let pushed = 0;
+  const running = main({
+    once: false,
+    intervalMs: 60_000,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    transport: createBitmapMockTransport({
+      onPush: () => {
+        pushed += 1;
+        if (pushed === 1) setImmediate(() => process.emit("SIGINT"));
+      },
+      onClose: () => { closed = true; },
+    }),
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => (args.includes("daily") ? dailyJson : blocksJson),
+  });
+
+  const result = await Promise.race([
+    running.then(() => "settled"),
+    sleep(50).then(() => "timeout"),
+  ]);
+
+  assert.equal(result, "settled");
+  assert.equal(closed, true);
+});
 
 test("a button that arrived before the tick is buffered and drained into the tick (H4 via main once-mode)", async () => {
   mkdirSync("out", { recursive: true });
@@ -96,3 +158,9 @@ test("a button that arrived before the tick is buffered and drained into the tic
   const state = JSON.parse(readFileSync(statePath, "utf8"));
   assert.equal(state.careCount, 1); // buffered KEY-long was drained into runOneTick -> care recorded
 });
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}

@@ -199,6 +199,7 @@ export async function main({
   let lastKnownUsage = null;
   let stopped = false;
   let timer = null;
+  let resolveLoopSleep = null;
   let runtime = {};
   const actions = createActionQueue();
   const buttonBuffer = [];
@@ -230,6 +231,9 @@ export async function main({
   const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    timer = null;
+    resolveLoopSleep?.();
+    resolveLoopSleep = null;
     offSignature?.();
     offButtonBuffer?.();
     animator.stop();
@@ -285,7 +289,14 @@ export async function main({
     intervalMs,
     isStopped: () => stopped,
     beforeLoop: () => animator.start(),
-    setTimer: (resolve, ms) => { timer = setTimeout(resolve, ms); },
+    setTimer: (resolve, ms) => {
+      resolveLoopSleep = () => {
+        timer = null;
+        resolveLoopSleep = null;
+        resolve();
+      };
+      timer = setTimeout(resolveLoopSleep, ms);
+    },
   });
 }
 

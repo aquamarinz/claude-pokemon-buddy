@@ -21,3 +21,10 @@ test("decode rejects bad crc", () => {
   f[f.length - 1] ^= 0xff;
   assert.throws(() => decodeFrame(f));
 });
+
+test("encodeFrame rejects payloads larger than the 16-bit protocol length (RL10)", () => {
+  assert.throws(
+    () => encodeFrame({ type: 1, seq: 1, payload: new Uint8Array(0x10000) }),
+    /payload length/i,
+  );
+});
