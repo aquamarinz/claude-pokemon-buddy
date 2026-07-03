@@ -85,15 +85,18 @@ export function createButtonDispatcher({
   onSignatureError = () => {},
 } = {}) {
   const tickQueue = [];
+  let signatureInFlight = false;
   const off = transport?.onButton?.((event) => {
     if (shouldPlaySignature(event, getPet())) {
+      if (signatureInFlight) return;
       const pressModel = getModel();
       if (pressModel) {
+        signatureInFlight = true;
         actions.run(async () => {
           animator.pause();
           try { await playSignature({ transport, model: pressModel }); }
           finally { animator.resume(); }
-        }).catch(onSignatureError);
+        }).catch(onSignatureError).finally(() => { signatureInFlight = false; });
       }
       return;
     }

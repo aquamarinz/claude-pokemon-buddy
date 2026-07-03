@@ -85,6 +85,41 @@ test("dispatcher routes non-ready KEY-short to signature animation only", async 
   assert.equal(transport.listenerCount(), 0);
 });
 
+test("dispatcher drops rapid signature presses while one is in flight", async () => {
+  const transport = createButtonTransport();
+  const signatures = [];
+  const runs = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const dispatcher = createButtonDispatcher({
+    transport,
+    getPet: () => ({ readyToEvolve: false }),
+    getModel: () => ({ buddy: { species: "eevee" } }),
+    actions: {
+      run(fn) {
+        const result = fn();
+        runs.push(result);
+        return result;
+      },
+    },
+    playSignature: async () => {
+      signatures.push("signature");
+      await gate;
+    },
+  });
+
+  transport.emitButton({ key: "KEY", kind: "short" });
+  transport.emitButton({ key: "KEY", kind: "short" });
+  transport.emitButton({ key: "KEY", kind: "short" });
+  await Promise.resolve();
+
+  assert.equal(signatures.length, 1);
+  assert.deepEqual(dispatcher.drainTickEvents(), []);
+  release();
+  await Promise.all(runs);
+  dispatcher.stop();
+});
+
 test("dispatcher queues ready KEY-short, long, and double presses for tick snapshots", () => {
   const transport = createButtonTransport();
   const dispatcher = createButtonDispatcher({
