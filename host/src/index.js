@@ -8,7 +8,7 @@ import { loadConfig, saveConfig } from "./config.js";
 import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { buildUsedDays, settleDays } from "./pet/settlement.js";
-import { resolveEvolution } from "./pet/evolution.js";
+import { applyPetTransitions, drainEvolutionIntents, ensurePet } from "./pet/transitions.js";
 import { runOnboarding } from "./pet/onboarding.js";
 import { createBuddyAnimator } from "./render/buddy-animator.js";
 import { playEvolutionAnimation } from "./render/evolution-anim.js";
@@ -23,8 +23,11 @@ import { pollUsageOnce } from "./usage-poll.mjs";
 import { loadUsageSnapshot, usageForDisplay } from "./usage.js";
 import { startWebServer } from "./web/server.js";
 import { validateSettings } from "./web/settings.js";
-import { toDashboardView } from "./web/viewmodel.js";
+import { toDashboardRuntimeView } from "./web/viewmodel.js";
 import { makeWeather } from "./weather.js";
+
+export { ensurePet } from "./pet/transitions.js";
+export { dashboardSensors } from "./web/viewmodel.js";
 
 const DEFAULT_WEATHER = {
   cond: "多云",
@@ -35,6 +38,7 @@ const DEFAULT_WEATHER = {
   precip: 30,
   wind: 11,
   humidity: 64,
+  degraded: true,
 };
 
 // Overlay official statusline rate-limits (5h/week %/reset) onto the ccusage
@@ -55,6 +59,14 @@ export function shouldPlaySignature(event, pet) {
   return event?.key === "KEY" && event?.kind === "short" && pet?.readyToEvolve === false;
 }
 
+export function shouldQueueButtonForTick(event) {
+  return event?.key === "KEY" && (
+    event.kind === "short" ||
+    event.kind === "long" ||
+    event.kind === "double"
+  );
+}
+
 // 串行化动作：tick 与招牌经同一队列互斥，杜绝 tick 帧插进招牌帧序列之间。
 export function createActionQueue() {
   let chain = Promise.resolve();
@@ -63,6 +75,64 @@ export function createActionQueue() {
       const result = chain.then(fn);
       chain = result.then(() => {}, () => {});
       return result;
+    },
+  };
+}
+
+export function createEvolutionIntentQueue() {
+  const intents = [];
+  return {
+    push(intent) {
+      intents.push(intent);
+    },
+    drain() {
+      return intents.splice(0);
+    },
+  };
+}
+
+export function createButtonDispatcher({
+  transport,
+  getPet = () => undefined,
+  getModel = () => null,
+  actions = createActionQueue(),
+  animator = { pause() {}, resume() {} },
+  playSignature = playSignatureAnimation,
+  onSignatureError = () => {},
+} = {}) {
+  const tickQueue = [];
+  let signatureInFlight = false;
+  const off = transport?.onButton?.((event) => {
+    if (shouldPlaySignature(event, getPet())) {
+      if (signatureInFlight) return;
+      const pressModel = getModel();
+      if (pressModel) {
+        signatureInFlight = true;
+        actions.run(async () => {
+          animator.pause();
+          try { await playSignature({ transport, model: pressModel }); }
+          finally { animator.resume(); }
+        }).catch(onSignatureError).finally(() => { signatureInFlight = false; });
+      }
+      return;
+    }
+
+    if (shouldQueueButtonForTick(event)) tickQueue.push(event);
+  });
+
+  return {
+    drainTickEvents() {
+      return tickQueue.splice(0);
+    },
+    requeueForRetry(events) {
+      const retry = events
+        .filter((event) => event && !event.requeued)
+        .map((event) => ({ ...event, requeued: true }));
+      tickQueue.unshift(...retry);
+      return retry.length;
+    },
+    stop() {
+      off?.();
     },
   };
 }
@@ -82,14 +152,17 @@ export async function runOneTick({
   evolutionDelay,
   onRenderModel,
   pendingButtons,
+  evolutionIntents,
 } = {}) {
   if (!usage) throw new Error("usage is required");
   if (!weather) throw new Error("weather is required");
 
   mkdirSync(dirname(statePath), { recursive: true });
   const activeTransport = transport ?? (mock ? adaptPngTransport(mock) : await transportFactory({ framePath }));
-  const buttonEvents = Array.isArray(pendingButtons) ? [...pendingButtons] : [];
-  const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
+  const buttonEvents = Array.isArray(pendingButtons)
+    ? [...pendingButtons]
+    : collectStandaloneButtonSnapshot(activeTransport);
+  const evolutionIntentEvents = drainEvolutionIntents(evolutionIntents);
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
   pet = settleDays(pet, today, {
@@ -100,27 +173,16 @@ export async function runOneTick({
     usage.todayPeriod == null || usage.todayPeriod === today ? usage.todayTokens : 0;
   pet = applyDailyGrowth(pet, { todayTokens: creditedTokens, today });
 
-  if (buttonEvents.some((event) => event?.key === "KEY" && event?.kind === "long")) {
-    pet = { ...pet, careCount: Math.max(0, Number(pet.careCount ?? 0)) + 1 };
-  }
-
-  // Table-driven: resolve once against the evolution tables, recompute readiness
-  // every tick (can fall back to false), and reuse the same resolution for KEY.
-  const evolution = resolveEvolution(pet.species, evolutionContext({ pet, weather, room: sensor, now }));
-  const readyToEvolve = Boolean(evolution.auto || evolution.candidates.length > 0);
-  pet = { ...pet, readyToEvolve };
-
-  let evolutionAnimation = null;
-  if (readyToEvolve && hasKeyPress(buttonEvents)) {
-    if (evolution.auto) {
-      const fromSpecies = pet.species;
-      const toSpecies = evolution.auto;
-      pet = evolvePet(pet, toSpecies);
-      evolutionAnimation = { fromSpecies, toSpecies };
-    } else if (evolution.candidates.length > 0) {
-      pet = { ...pet, pendingCandidates: evolution.candidates };
-    }
-  }
+  const transition = applyPetTransitions({
+    pet,
+    weather,
+    room: sensor,
+    now,
+    buttonEvents,
+    evolutionIntents: evolutionIntentEvents,
+  });
+  pet = transition.pet;
+  const evolutionAnimation = transition.evolutionAnimation;
 
   if (evolutionAnimation) {
     saveState(statePath, pet);
@@ -158,7 +220,6 @@ export async function runOneTick({
   const { pngBuffer, bitmap } = await renderFrame(model);
 
   saveState(statePath, pet);
-  offButtons?.();
   await activeTransport.push({ pngBuffer, bitmap });
 
   return pet;
@@ -177,12 +238,22 @@ export async function main({
   transport: injectedTransport,
   weatherClient: injectedWeatherClient,
   pollUsage = pollUsageOnce,
+  logger = console,
+  nowProvider = () => new Date(),
 } = {}) {
   let config = loadConfig(configPath);
   const transport = injectedTransport ?? await createTransport({ framePath });
+  const initialNow = nowProvider();
+  let soundNow = initialNow;
+  const hostTransport = withSoundGate(transport, () => config, () => soundNow);
+  let lastQuietActive = isQuietNow(config, initialNow);
+  const sendEffectiveVolume = (now) => {
+    transport.sendVolume?.(effectiveVolume(config, now));
+  };
+  sendEffectiveVolume(initialNow);
   let currentModel = null;
   const animator = createBuddyAnimator({
-    transport,
+    transport: hostTransport,
     getModel: () => currentModel,
     render: renderFrame,
   });
@@ -190,7 +261,7 @@ export async function main({
   await runOnboardingGate({
     statePath,
     onboarding: async () => {
-      const { io, off } = makeOnboardingIo(transport);
+      const { io, off } = makeOnboardingIo(hostTransport);
       try { return await runOnboarding(io); } finally { off?.(); }
     },
   });
@@ -199,20 +270,18 @@ export async function main({
   let lastKnownUsage = null;
   let stopped = false;
   let timer = null;
+  let resolveLoopSleep = null;
   let runtime = {};
+  let lastPollUsageFailureReason = null;
   const actions = createActionQueue();
-  const buttonBuffer = [];
-  const offButtonBuffer = transport.onButton?.((event) => buttonBuffer.push(event));
-  let signaturePlaying = false;
-  const offSignature = transport.onButton?.((event) => {
-    if (signaturePlaying || !currentModel || !shouldPlaySignature(event, runtime.pet)) return;
-    const pressModel = currentModel; // snapshot at press time; a later tick may reassign currentModel
-    signaturePlaying = true;
-    actions.run(async () => {
-      animator.pause();
-      try { await playSignatureAnimation({ transport, model: pressModel }); }
-      finally { animator.resume(); }
-    }).catch(() => {}).finally(() => { signaturePlaying = false; });
+  const evolutionIntents = createEvolutionIntentQueue();
+  const buttonDispatcher = createButtonDispatcher({
+    transport: hostTransport,
+    getPet: () => runtime.pet,
+    getModel: () => currentModel,
+    actions,
+    animator,
+    onSignatureError: () => {},
   });
   const dashboardServer = dashboard
     ? await startDashboardServer({
@@ -224,14 +293,24 @@ export async function main({
         getRuntime: () => runtime,
         getConfig: () => config,
         setConfig: (next) => { config = next; },
+        onSettingsChanged: (changed) => {
+          if (!("volume" in changed) && !("quietHours" in changed)) return;
+          const now = nowProvider();
+          soundNow = now;
+          lastQuietActive = isQuietNow(config, now);
+          sendEffectiveVolume(now);
+        },
+        evolutionIntents,
       })
     : null;
 
   const stop = () => {
     stopped = true;
     if (timer) clearTimeout(timer);
-    offSignature?.();
-    offButtonBuffer?.();
+    timer = null;
+    resolveLoopSleep?.();
+    resolveLoopSleep = null;
+    buttonDispatcher.stop();
     animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
@@ -240,33 +319,59 @@ export async function main({
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  let lastHour = new Date().getHours();
+  let lastHour = initialNow.getHours();
   async function tick() {
     await actions.run(async () => {
+      const now = nowProvider();
+      soundNow = now;
+      const quietActive = isQuietNow(config, now);
+      if (quietActive !== lastQuietActive) {
+        lastQuietActive = quietActive;
+        sendEffectiveVolume(now);
+      }
       animator.pause();
       try {
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
         const selected = usageForDisplay(snapshot, lastKnownUsage);
         lastKnownUsage = selected.lastKnown;
-        await pollUsage().catch(() => {});
+        const pollResult = await pollUsage().catch((error) => ({
+          ok: false,
+          reason: errorReason(error),
+        }));
+        lastPollUsageFailureReason = logFailureReasonTransition({
+          result: pollResult,
+          lastReason: lastPollUsageFailureReason,
+          logger,
+          label: "pollUsage",
+        });
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
-        const room = transport.feedSensor();
-        const pet = await runOneTick({
-          usage,
-          weather,
-          room,
-          statePath,
-          framePath,
-          transport,
-          onRenderModel: (model) => { currentModel = model; },
-          pendingButtons: buttonBuffer.splice(0),
-        });
+        const room = hostTransport.feedSensor();
+        const pendingButtons = buttonDispatcher.drainTickEvents();
+        let pet;
+        try {
+          pet = await runOneTick({
+            usage,
+            weather,
+            room,
+            statePath,
+            framePath,
+            transport: hostTransport,
+            now,
+            today: localYmd(now),
+            onRenderModel: (model) => { currentModel = model; },
+            pendingButtons,
+            evolutionIntents,
+          });
+        } catch (error) {
+          buttonDispatcher.requeueForRetry(pendingButtons);
+          throw error;
+        }
         runtime = { usage, weather, room, pet };
-        const hour = new Date().getHours();
+        const hour = now.getHours();
         if (hour !== lastHour) {
           lastHour = hour;
-          transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+          hostTransport.playSound?.(SOUND.HOUR);       // top-of-hour chime
         }
         console.log(`wrote ${framePath}`);
       } finally {
@@ -275,18 +380,31 @@ export async function main({
     });
   }
 
-  if (once) {
-    await tick(); // once mode: let errors propagate to the exit code
-    return;
-  }
+  try {
+    if (once) {
+      await tick(); // once mode: let errors propagate to the exit code
+      return;
+    }
 
-  await runTickLoop({
-    runTick: tick,
-    intervalMs,
-    isStopped: () => stopped,
-    beforeLoop: () => animator.start(),
-    setTimer: (resolve, ms) => { timer = setTimeout(resolve, ms); },
-  });
+    await runTickLoop({
+      runTick: tick,
+      intervalMs,
+      isStopped: () => stopped,
+      beforeLoop: () => animator.start(),
+      setTimer: (resolve, ms) => {
+        resolveLoopSleep = () => {
+          timer = null;
+          resolveLoopSleep = null;
+          resolve();
+        };
+        timer = setTimeout(resolveLoopSleep, ms);
+      },
+    });
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    if (once && !stopped) stop();
+  }
 }
 
 export async function runTickLoop({
@@ -322,6 +440,8 @@ export function startDashboardServer({
   getRuntime = () => ({}),
   getConfig = () => loadConfig(configPath),
   setConfig = () => {},
+  onSettingsChanged = () => {},
+  evolutionIntents = createEvolutionIntentQueue(),
 } = {}) {
   return startWebServer({
     host,
@@ -330,28 +450,36 @@ export function startDashboardServer({
     getView: () => {
       const config = getConfig();
       const runtime = getRuntime();
-      const pet = dashboardPet(runtime.pet ?? loadState(statePath), runtime.usage);
-      const view = toDashboardView({
-        pet,
-        usage: dashboardUsage(runtime.usage, pet),
+      return toDashboardRuntimeView({
+        pet: runtime.pet ?? loadState(statePath),
+        usage: runtime.usage,
         weather: runtime.weather ?? DEFAULT_WEATHER,
-        sensors: dashboardSensors(runtime.room),
-        journey: dashboardJourney(pet),
-        secrets: dashboardSecrets(pet),
+        room: runtime.room,
         config,
       });
-      return {
-        ...view,
-        box: Array.isArray(config.box) && config.box.length > 0 ? config.box : [pet.species],
-      };
     },
     saveSettings: (input) => {
       const result = validateSettings(input);
       if (!result.ok) throw new Error(result.error);
       const next = { ...getConfig(), ...result.value };
-      setConfig(next);
+      if (result.value.name === "") delete next.name;
       saveConfig(configPath, next);
+      const effective = loadConfig(configPath);
+      setConfig(effective);
+      onSettingsChanged(result.value, effective);
       return result.value;
+    },
+    chooseEvolution: (to) => {
+      const runtime = getRuntime();
+      const pet = runtime.pet ?? loadState(statePath);
+      const pending = Array.isArray(pet.pendingCandidates) ? pet.pendingCandidates : [];
+      if (!pending.some((candidate) => candidate?.to === to)) {
+        throw new Error("evolution candidate is not pending");
+      }
+      evolutionIntents.push({ type: "choose", to });
+    },
+    grantEvolutionStone: (stone) => {
+      evolutionIntents.push({ type: "stone", stone });
     },
   });
 }
@@ -363,6 +491,16 @@ function adaptPngTransport(transport) {
       return transport.push(frame?.pngBuffer ?? frame);
     },
   };
+}
+
+function collectStandaloneButtonSnapshot(transport) {
+  const events = [];
+  const off = transport?.onButton?.((event) => events.push(event));
+  try {
+    return events;
+  } finally {
+    off?.();
+  }
 }
 
 export async function runOnboardingGate({
@@ -388,65 +526,36 @@ function makeNewborn(species, name, today, personalityRng = Math.random) {
   };
 }
 
-function makeOnboardingIo(transport) {
-  let resolveBtn = null;
-  const off = transport.onButton?.((b) => { const r = resolveBtn; resolveBtn = null; r?.(b); });
+export function makeOnboardingIo(transport) {
+  const queue = [];
+  const waiters = [];
+  const off = transport.onButton?.((button) => {
+    const waiter = waiters.shift();
+    if (waiter) {
+      waiter(button);
+      return;
+    }
+    if (queue.length < 8) queue.push(button);
+  });
   const io = {
     push: (frame) => transport.push(frame),
-    nextButton: () => new Promise((res) => { resolveBtn = res; }),
+    nextButton: () => {
+      if (queue.length > 0) return Promise.resolve(queue.shift());
+      return new Promise((res) => { waiters.push(res); });
+    },
     playSound: (id) => transport.playSound?.(id),
     delay: (ms) => new Promise((res) => setTimeout(res, ms)),
   };
   return { io, off };
 }
 
-export function ensurePet(state, today, personalityRng = Math.random) {
-  // No hatched flag = fresh start (or pre-hatched dirty save) → newborn from bond 0.
-  // The onboarding gate (runOnboardingGate in main) handles species choice + hatch;
-  // ensurePet is the no-gate fallback (tests / CPB_ONCE) and births a plain eevee.
-  if (!state?.hatched) {
-    return {
-      species: "eevee",
-      level: 1,
-      exp: 0,
-      bond: 0,
-      streak: 0,
-      shield: 0,
-      lastSettled: today,
-      lastGrowthDay: null,
-      todayCreditedExp: 0,
-      todayCreditedBond: 0,
-      hatched: true,
-      ...rollPersonality(personalityRng),
-    };
-  }
-
-  const pet = {
-    species: "eevee",
-    level: 1,
-    exp: 0,
-    bond: 0,
-    streak: 0,
-    shield: 0,
-    lastSettled: today,
-    lastGrowthDay: null,
-    todayCreditedExp: 0,
-    todayCreditedBond: 0,
-    ...state,
+function withSoundGate(transport, getConfig, getNow) {
+  return {
+    ...transport,
+    playSound(id) {
+      if (!isQuietNow(getConfig(), getNow())) transport.playSound?.(id);
+    },
   };
-  return hasPersonality(pet) ? pet : { ...pet, ...rollPersonality(personalityRng) };
-}
-
-function hasPersonality(pet) {
-  return Boolean(
-    typeof pet.nature === "string" &&
-      pet.nature.length > 0 &&
-      Array.isArray(pet.iv) &&
-      pet.iv.length === 6 &&
-      pet.iv.every((value) => Number.isInteger(value) && value >= 0 && value <= 31) &&
-      typeof pet.characteristic === "string" &&
-      pet.characteristic.length > 0,
-  );
 }
 
 async function loadWeatherSnapshot(weatherClient, config) {
@@ -455,109 +564,22 @@ async function loadWeatherSnapshot(weatherClient, config) {
   return weather;
 }
 
-function hasKeyPress(events) {
-  return events.some((event) => event?.key === "KEY" && event?.kind === "short");
+function logFailureReasonTransition({ result, lastReason, logger, label }) {
+  const reason = failureReason(result);
+  if (!reason) return null;
+  if (reason !== lastReason) logger?.warn?.(`${label} failed: ${reason}`);
+  return reason;
 }
 
-function evolutionContext({ pet, weather, room, now }) {
-  const hour = now.getHours();
-  const daytime = hour >= 6 && hour < 18;
-  const careCount = Math.max(0, Number(pet.careCount ?? 0));
-
-  return {
-    bond: pet.bond,
-    level: pet.level,
-    daytime,
-    night: !daytime,
-    care: careCount > 0,
-    careCount,
-    roomTemp: room?.t,
-    roomHumidity: room?.h,
-    weather: weather?.cond,
-    temp: weather?.temp,
-    humidity: weather?.humidity,
-    warmHumid: isWarmHumid(weather?.temp, weather?.humidity) || isWarmHumid(room?.t, room?.h),
-    cold: isCold(weather?.temp) || isCold(room?.t),
-    stone: pet.stone,
-  };
+function failureReason(result) {
+  if (result?.ok !== false) return null;
+  return typeof result.reason === "string" && result.reason.length > 0
+    ? result.reason
+    : "unknown";
 }
 
-function evolvePet(pet, species) {
-  const { pendingCandidates, stone, ...rest } = pet;
-  return { ...rest, species, readyToEvolve: false };
-}
-
-function isWarmHumid(temp, humidity) {
-  return typeof temp === "number" && typeof humidity === "number" && temp >= 20 && humidity >= 60;
-}
-
-function isCold(temp) {
-  return typeof temp === "number" && temp <= 4;
-}
-
-function dashboardPet(pet, usage) {
-  const normalized = {
-    species: "eevee",
-    level: 1,
-    exp: 0,
-    bond: 0,
-    streak: 0,
-    ...pet,
-  };
-  return {
-    ...normalized,
-    mood: normalized.mood ?? deriveMood(dashboardUsage(usage, normalized)),
-    nature: normalized.nature ?? "—",
-    iv: Array.isArray(normalized.iv) ? normalized.iv : [],
-    characteristic: normalized.characteristic ?? "—",
-    badges: Array.isArray(normalized.badges) ? normalized.badges : dashboardBadges(normalized),
-  };
-}
-
-function dashboardUsage(usage, pet = {}) {
-  return {
-    p5h: null,
-    pweek: null,
-    todayCost: null,
-    todayTokens: null,
-    streak: pet.streak ?? 0,
-    modelled: false,
-    ...usage,
-  };
-}
-
-export function dashboardSensors(room) {
-  const r = room ?? {};
-  return {
-    roomT: r.roomT ?? r.t ?? null,
-    roomH: r.roomH ?? r.h ?? null,
-  };
-}
-
-function dashboardJourney(pet) {
-  if (Array.isArray(pet.journey)) return pet.journey;
-  const date = pet.lastGrowthDay ?? pet.lastSettled;
-  return date ? [{ date, text: `亲密度 ${pet.bond}` }] : [];
-}
-
-function dashboardSecrets(pet) {
-  const source = pet.secrets ?? {};
-  const discovered = Array.isArray(source.discovered)
-    ? source.discovered
-    : Array.isArray(pet.discoveredSecrets)
-      ? pet.discoveredSecrets
-      : [];
-  return {
-    discovered,
-    total: Number.isFinite(source.total) ? source.total : 12,
-  };
-}
-
-function dashboardBadges(pet) {
-  const badges = [];
-  if ((pet.streak ?? 0) >= 7) badges.push("7d");
-  if ((pet.bond ?? 0) >= PARAMS.evolveBond) badges.push("EVO");
-  return badges;
+function errorReason(error) {
+  return error?.message ? error.message : "error";
 }
 
 function localYmd(date) {
@@ -565,6 +587,28 @@ function localYmd(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function isQuietNow(config, now) {
+  const quietHours = config?.quietHours;
+  if (!quietHours) return false;
+  const { start, end } = quietHours;
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return false;
+  if (start < 0 || start > 23 || end < 0 || end > 23 || start === end) return false;
+  const hour = now.getHours();
+  return start < end
+    ? hour >= start && hour < end
+    : hour >= start || hour < end;
+}
+
+function effectiveVolume(config, now) {
+  return isQuietNow(config, now) ? 0 : volumeByte(config?.volume);
+}
+
+function volumeByte(value) {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(volume)));
 }
 
 const isCli = process.argv[1] && existsSync(process.argv[1])

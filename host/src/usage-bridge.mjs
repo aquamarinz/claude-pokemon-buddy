@@ -4,9 +4,10 @@
 // atomically write ~/.claude/cpb-usage.json for the buddy host to read, and
 // print a one-line statusline so the user's status bar still shows something.
 // MUST never throw — a crashing statusLine command degrades the CC UI.
-import { writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
+
+import { writeUsageFile } from "./usage-poll.mjs";
 
 const OUT = process.env.CPB_USAGE_PATH || join(homedir(), ".claude", "cpb-usage.json");
 
@@ -35,10 +36,7 @@ const out = {
 };
 
 try {
-  mkdirSync(dirname(OUT), { recursive: true });
-  const tmp = `${OUT}.tmp`;
-  writeFileSync(tmp, JSON.stringify(out));
-  renameSync(tmp, OUT);
+  writeUsageFile(OUT, out);
 } catch { /* never crash CC over a write failure */ }
 
 const f = out.fiveHourPct == null ? "--" : `${Math.round(out.fiveHourPct)}%`;

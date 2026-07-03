@@ -36,7 +36,8 @@ test("night RTC plus KEY evolves ready Eevee to Umbreon", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 21),
-    mock: mockPressingKey(framePath),
+    mock: createMockTransport({ framePath }),
+    pendingButtons: [{ key: "KEY", kind: "short" }],
     evolutionDelay: async () => {},
   });
 
@@ -56,12 +57,14 @@ test("long-press KEY does not trigger evolution (short-only)", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 21),
-    mock: mockPressingKey(framePath, { t: 21, h: 45 }, "long"),
+    mock: createMockTransport({ framePath, sensor: { t: 21, h: 45 } }),
+    pendingButtons: [{ key: "KEY", kind: "long" }],
     evolutionDelay: async () => {},
   });
 
   assert.equal(state.species, "eevee");
   assert.equal(state.readyToEvolve, true);
+  assert.equal(state.careCount, 1);
   assert.equal(state.pendingCandidates, undefined);
 });
 
@@ -76,7 +79,8 @@ test("double-press KEY does not trigger evolution (short-only)", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 21),
-    mock: mockPressingKey(framePath, { t: 21, h: 45 }, "double"),
+    mock: createMockTransport({ framePath, sensor: { t: 21, h: 45 } }),
+    pendingButtons: [{ key: "KEY", kind: "double" }],
     evolutionDelay: async () => {},
   });
 
@@ -85,10 +89,10 @@ test("double-press KEY does not trigger evolution (short-only)", async () => {
   assert.equal(state.pendingCandidates, undefined);
 });
 
-test("KEY stores pending candidates when multiple branches are eligible", async () => {
+test("KEY stores pending candidates when no-care environmental branches conflict", async () => {
   const statePath = join("out", "test-pending-evolve-state.json");
   const framePath = join("out", "test-pending-evolve-frame.png");
-  writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 1 });
+  writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 0 });
 
   const state = await runOneTick({
     usage: usageWithTokens(0),
@@ -96,16 +100,45 @@ test("KEY stores pending candidates when multiple branches are eligible", async 
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 10),
-    mock: mockPressingKey(framePath, { t: 24, h: 70 }),
+    mock: createMockTransport({ framePath, sensor: { t: 24, h: 70 } }),
+    pendingButtons: [{ key: "KEY", kind: "short" }],
   });
 
   assert.equal(state.species, "eevee");
   assert.equal(state.readyToEvolve, true);
   assert.deepEqual(state.pendingCandidates.map(({ to }) => to), [
-    "sylveon",
     "espeon",
     "leafeon",
   ]);
+});
+
+test("queued choice intent evolves a currently eligible pending branch on the next tick", async () => {
+  const statePath = join("out", "test-choice-leafeon-state.json");
+  const framePath = join("out", "test-choice-leafeon-frame.png");
+  writeState(statePath, {
+    bond: 160,
+    readyToEvolve: true,
+    pendingCandidates: [
+      { to: "espeon", needs: { bond: 56, daytime: true }, priority: 2 },
+      { to: "leafeon", needs: { bond: 56, warmHumid: true }, priority: 3 },
+    ],
+  });
+  const evolutionIntents = intentQueue([{ type: "choose", to: "leafeon" }]);
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 24, humidity: 70 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath, sensor: { t: 24, h: 70 } }),
+    evolutionIntents,
+    evolutionDelay: async () => {},
+  });
+
+  assert.equal(state.species, "leafeon");
+  assert.equal(state.readyToEvolve, false);
+  assert.equal(state.pendingCandidates, undefined);
 });
 
 test("stone overrides RTC branch when KEY triggers evolution", async () => {
@@ -119,7 +152,8 @@ test("stone overrides RTC branch when KEY triggers evolution", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 10),
-    mock: mockPressingKey(framePath),
+    mock: createMockTransport({ framePath }),
+    pendingButtons: [{ key: "KEY", kind: "short" }],
     evolutionDelay: async () => {},
   });
 
@@ -157,7 +191,8 @@ test("KEY evolves a level-ready Bulbasaur to Ivysaur", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 10),
-    mock: mockPressingKey(framePath),
+    mock: createMockTransport({ framePath }),
+    pendingButtons: [{ key: "KEY", kind: "short" }],
     evolutionDelay: async () => {},
   });
 
@@ -196,7 +231,8 @@ test("KEY evolves a level-30 Ivysaur to Venusaur", async () => {
     statePath,
     framePath,
     now: new Date(2026, 4, 30, 10),
-    mock: mockPressingKey(framePath),
+    mock: createMockTransport({ framePath }),
+    pendingButtons: [{ key: "KEY", kind: "short" }],
     evolutionDelay: async () => {},
   });
 
@@ -208,7 +244,7 @@ test("KEY evolution saves evolved state and pushes the animation", async () => {
   const statePath = join("out", "test-evo-anim-state.json");
   const framePath = join("out", "test-evo-anim-frame.png");
   writeState(statePath, { species: "eevee", bond: 160, readyToEvolve: true });
-  const mock = mockPressingKey(framePath);
+  const mock = createMockTransport({ framePath });
   const origPush = mock.push.bind(mock);
   let pushes = 0;
   mock.push = async (frame) => {
@@ -223,6 +259,7 @@ test("KEY evolution saves evolved state and pushes the animation", async () => {
     framePath,
     now: new Date(2026, 4, 30, 21),
     mock,
+    pendingButtons: [{ key: "KEY", kind: "short" }],
     evolutionDelay: async () => {},
   });
 
@@ -256,16 +293,6 @@ function writeState(statePath, overrides) {
   );
 }
 
-function mockPressingKey(framePath, sensor = { t: 21, h: 45 }, kind = "short") {
-  const mock = createMockTransport({ framePath, sensor });
-  const feedSensor = mock.feedSensor;
-  mock.feedSensor = () => {
-    mock.injectButton("KEY", kind);
-    return feedSensor();
-  };
-  return mock;
-}
-
 function usageWithTokens(todayTokens) {
   return {
     p5h: 12,
@@ -287,5 +314,17 @@ function weather({ temp, humidity }) {
     precip: 30,
     wind: 11,
     humidity,
+  };
+}
+
+function intentQueue(initial = []) {
+  const items = [...initial];
+  return {
+    push(intent) {
+      items.push(intent);
+    },
+    drain() {
+      return items.splice(0);
+    },
   };
 }

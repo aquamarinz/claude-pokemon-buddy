@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <freertos/FreeRTOS.h>
@@ -51,16 +52,16 @@ height_(height)
     assert(DispBuffer);
 
 #if (AlgorithmOptimization == 3)
-	PixelIndexLUT = (uint16_t (*)[300])heap_caps_malloc(transfer * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-	PixelBitLUT   = (uint8_t (*)[300])heap_caps_malloc(transfer * sizeof(uint8_t), MALLOC_CAP_SPIRAM);
+    // The ST7305 panel in this device is fixed landscape 400x300. Portrait LUTs
+    // are intentionally unsupported so the LUT's second dimension stays valid.
+    assert(width_ == kLandscapeWidth && height_ == kLandscapeHeight);
+	PixelIndexLUT = (uint16_t (*)[kLandscapeHeight])heap_caps_malloc(transfer * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+	PixelBitLUT   = (uint8_t (*)[kLandscapeHeight])heap_caps_malloc(transfer * sizeof(uint8_t), MALLOC_CAP_SPIRAM);
     assert(PixelIndexLUT);
     assert(PixelBitLUT);
-    if(width_ == 400) {
-        InitLandscapeLUT();
-    } else {
-        InitPortraitLUT();
-    }
+    InitLandscapeLUT();
 #endif
+
 }
 
 DisplayPort::~DisplayPort() {
@@ -310,27 +311,6 @@ void DisplayPort::RLCD_SetLandscapePixel(uint16_t x, uint16_t y, uint8_t color) 
 
 #if (AlgorithmOptimization == 3)
 
-void DisplayPort::InitPortraitLUT() {
-    uint16_t W4 = width_ >> 2;
-    for (uint16_t y = 0; y < height_; y++)
-    {
-        uint16_t byte_y = y >> 1;
-        uint8_t  local_y = y & 1;
-
-        for (uint16_t x = 0; x < width_; x++)
-        {
-            uint16_t byte_x = x >> 2;
-            uint8_t  local_x = x & 3;
-
-            uint32_t index = byte_y * W4 + byte_x;
-            uint8_t bit = 7 - ((local_x << 1) | local_y);
-
-            PixelIndexLUT[x][y] = index;
-            PixelBitLUT  [x][y] = (1 << bit);
-        }
-    }
-}
-
 void DisplayPort::InitLandscapeLUT() {
     uint16_t H4 = height_ >> 2;
 
@@ -367,118 +347,4 @@ void DisplayPort::RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color) {
         *p &= ~mask;
 }
 
-#endif
-
-
-#if 0 
-    RLCD_SendCommand(0xD6);  // NVM Load Control
-	RLCD_SendData(0x17);
-	RLCD_SendData(0x02);
-
-	RLCD_SendCommand(0xD1); //Booster Enable
-	RLCD_SendData(0x01);
-
-	RLCD_SendCommand(0xC0); //Gate Voltage Control
-	RLCD_SendData(0x11);   
-	RLCD_SendData(0x04);   
-
-	RLCD_SendCommand(0xC1); //VSHP Setting
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-
-	RLCD_SendCommand(0xC2);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-
-	RLCD_SendCommand(0xC4);
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-	RLCD_SendData(0x41);
-
-	RLCD_SendCommand(0xC5);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-	RLCD_SendData(0x19);
-
-	RLCD_SendCommand(0xD8);
-	RLCD_SendData(0xA6);
-	RLCD_SendData(0xE9);
-
-	RLCD_SendCommand(0xB2);
-	RLCD_SendData(0x05);
-
-	RLCD_SendCommand(0xB3);
-	RLCD_SendData(0xE5);
-	RLCD_SendData(0xF6);
-	RLCD_SendData(0x05);
-	RLCD_SendData(0x46);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x76);
-	RLCD_SendData(0x45);
-
-	RLCD_SendCommand(0xB4);
-	RLCD_SendData(0x05);
-	RLCD_SendData(0x46);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x77);
-	RLCD_SendData(0x76);
-	RLCD_SendData(0x45);
-
-	RLCD_SendCommand(0x62);
-	RLCD_SendData(0x32);
-	RLCD_SendData(0x03);
-	RLCD_SendData(0x1F);
-
-	RLCD_SendCommand(0xB7);
-	RLCD_SendData(0x13);
-
-	RLCD_SendCommand(0xB0);
-	RLCD_SendData(0x64);
-
-	RLCD_SendCommand(0x11); 
-	vTaskDelay(pdMS_TO_TICKS(200));     
-	RLCD_SendCommand(0xC9);
-	RLCD_SendData(0x00);
-
-	RLCD_SendCommand(0x36);
-	RLCD_SendData(0x48); 
-
-	RLCD_SendCommand(0x3A);
-	RLCD_SendData(0x11); 
-
-	RLCD_SendCommand(0xB9);
-	RLCD_SendData(0x20);
-
-	RLCD_SendCommand(0xB8);
-	RLCD_SendData(0x29);
-
-	RLCD_SendCommand(0x21);
-
-	RLCD_SendCommand(0x2A); 
-	RLCD_SendData(0x12);
-	RLCD_SendData(0x2A);
-
-	RLCD_SendCommand(0x2B); 
-	RLCD_SendData(0x00);
-	RLCD_SendData(0xC7);
-
-	RLCD_SendCommand(0x35);
-	RLCD_SendData(0x00);
-
-	RLCD_SendCommand(0xD0);
-	RLCD_SendData(0xFF);
-
-	RLCD_SendCommand(0x38);
-	RLCD_SendCommand(0x29);
 #endif

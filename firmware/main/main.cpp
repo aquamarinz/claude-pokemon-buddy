@@ -17,7 +17,10 @@
 //   FRAME  0x01 (in)  = [x u16][y u16][w u16][h u16][RLE bytes]   -> blit
 //   PLAY   0x03 (in)  = [sound_id]                                -> play now
 //   CONFIG 0x04 (in)  = [sound_id]                                -> set KEY cry
+//   VOLUME 0x25 (in)  = [volume 0..100]                            -> set codec volume
+//   HELLO  0x81 (out) = [proto_ver][sound_count]                   -> boot handshake
 //   ACK    0x84 (out) = [acked_seq]                               (host matches seq)
+//   NACK   0x85 (out) = [rejected_seq]                            (semantic FRAME reject)
 //   SENSOR 0x83 (out) = [temp i16 LE, units 0.1C][humidity u8 %]  (seq ignored by host)
 //   BUTTON 0x82 (out) = [key_id][kind_id]   key 1=KEY/2=BOOT, kind 1=short/2=long/3=double
 //
@@ -73,15 +76,21 @@ static constexpr uint8_t KIND_DOUBLE = 3;
 
 // ---- Protocol --------------------------------------------------------------
 static constexpr uint8_t MAGIC    = 0xA5;
+static constexpr uint8_t PROTO_VER = 1;
 static constexpr uint8_t T_FRAME  = 0x01;
 static constexpr uint8_t T_PLAY   = 0x03;   // host -> device: play sound, payload[0]=id
+static constexpr uint8_t T_CONFIG = 0x04;   // host -> device: set active KEY cry
+static constexpr uint8_t T_VOLUME = 0x25;   // host -> device: set codec volume 0..100
+static constexpr uint8_t T_HELLO  = 0x81;
 static constexpr uint8_t T_BUTTON = 0x82;
 static constexpr uint8_t T_SENSOR = 0x83;
 static constexpr uint8_t T_ACK    = 0x84;
+static constexpr uint8_t T_NACK   = 0x85;
 
 static constexpr size_t RX_MAX   = 48 * 1024;     // > largest valid frame (~30KB)
 static constexpr size_t RECT_MAX = (W * H) / 8;   // 15000B = full-screen 1bpp
-static constexpr size_t MAX_INBOUND_PAYLOAD = 2 * RECT_MAX + 16; // RLE worst-case (~2x) + rect header slack
+static constexpr size_t MAX_INBOUND_PAYLOAD = 30016; // RLE worst-case (~2x) + rect header slack
+static_assert(MAX_INBOUND_PAYLOAD == 2 * RECT_MAX + 16, "host protocol constants must match firmware payload limit");
 static constexpr uint32_t SENSOR_PERIOD_MS = 30000;
 
 static uint8_t *rxbuf = nullptr;                  // frame accumulation (PSRAM)
@@ -90,6 +99,9 @@ static uint8_t *rectbuf = nullptr;                // RLE-decoded rect (PSRAM)
 
 static SemaphoreHandle_t tx_mutex = nullptr;      // serializes USJ writes
 static QueueHandle_t     btn_queue = nullptr;     // button events -> button_task
+static std::atomic<uint32_t> g_tx_drop_count{0};
+static bool have_last_acked_frame_seq = false;
+static uint8_t last_acked_frame_seq = 0;
 
 // ---- Audio (ES8311; built in app_main like the I2C sensor) -----------------
 static constexpr int AUDIO_SR = 16000;            // sample rate (Hz)
@@ -101,14 +113,15 @@ static constexpr uint8_t SND_HOUR   = 2;          // top-of-hour chime (host PLA
 // One note: sweep f0 -> f1 over `ms`. f0 == 0 means a silent gap.
 struct Note { float f0, f1; int ms; };
 #include "species_cries.inc"
-static constexpr uint8_t T_CONFIG = 0x04;          // host -> device: set active KEY cry
-static constexpr int SND_COUNT = SND_SPECIES_BASE + SND_SPECIES_COUNT; // 3 + 18 = 21
+static constexpr uint8_t SND_COUNT = 21;           // 3 system sounds + 18 species cries
 static_assert(SND_SPECIES_BASE == 3, "species ids must start after BUI/EVOLVE/HOUR");
+static_assert(SND_COUNT == SND_SPECIES_BASE + SND_SPECIES_COUNT, "sound count must match species_cries.inc");
 static CodecPort    *g_codec = nullptr;
 static int16_t      *g_snd[SND_COUNT] = {};       // synthesized PCM per sound (PSRAM)
 static size_t        g_snd_bytes[SND_COUNT] = {};
 static QueueHandle_t audio_queue = nullptr;       // sound id -> audio_task
 static std::atomic<uint8_t> g_active_cry{SND_BUI};  // KEY-press cry; set by host CONFIG
+static std::atomic<uint8_t> g_volume{80};
 static void play_sound(uint8_t id);               // fwd decl (used by parse_frames)
 
 static uint32_t crc32(const uint8_t *b, size_t n)
@@ -123,10 +136,10 @@ static uint32_t crc32(const uint8_t *b, size_t n)
 }
 
 // Build [MAGIC|type|seq|len(2)|payload|crc32] and write it atomically.
-static void send_frame(uint8_t type, uint8_t seq, const uint8_t *payload, uint8_t len)
+static bool send_frame(uint8_t type, uint8_t seq, const uint8_t *payload, uint8_t len)
 {
     uint8_t f[5 + 64 + 4];
-    if (len > 64) return;
+    if (len > 64) return false;
     f[0] = MAGIC; f[1] = type; f[2] = seq; f[3] = len; f[4] = 0;
     if (len) memcpy(f + 5, payload, len);
     uint32_t c = crc32(f, 5 + len);
@@ -135,13 +148,47 @@ static void send_frame(uint8_t type, uint8_t seq, const uint8_t *payload, uint8_
     f[5 + len + 2] = (c >> 16) & 0xff;
     f[5 + len + 3] = (c >> 24) & 0xff;
     xSemaphoreTake(tx_mutex, portMAX_DELAY);
-    usb_serial_jtag_write_bytes(f, 5 + (size_t)len + 4, pdMS_TO_TICKS(100));
+    const size_t total = 5 + (size_t)len + 4;
+    int written = usb_serial_jtag_write_bytes(f, total, pdMS_TO_TICKS(100));
     xSemaphoreGive(tx_mutex);
+    if (written != (int)total) {
+        uint32_t drops = ++g_tx_drop_count;
+        ESP_LOGW(TAG, "serial tx drop #%u type=0x%02x seq=%u wrote=%d/%u",
+                 (unsigned)drops, type, seq, written, (unsigned)total);
+        return false;
+    }
+    return true;
 }
 
 static void send_ack(uint8_t seq)
 {
     send_frame(T_ACK, seq, &seq, 1);              // payload[0] = acked seq
+}
+
+static void send_nack(uint8_t seq)
+{
+    send_frame(T_NACK, seq, &seq, 1);             // payload[0] = rejected seq
+}
+
+static void send_hello(void)
+{
+    uint8_t p[2] = { PROTO_VER, SND_COUNT };
+    send_frame(T_HELLO, 0, p, sizeof(p));
+}
+
+static void hello_task(void *)
+{
+    send_hello();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    send_hello();
+    vTaskDelete(nullptr);
+}
+
+static void set_volume(uint8_t vol)
+{
+    if (vol > 100) return;
+    g_volume.store(vol);
+    if (g_codec) g_codec->set_volume(vol);
 }
 
 // Decode a FRAME payload (dirty-rect header + RLE) and blit it. Returns true
@@ -194,11 +241,21 @@ static void parse_frames(void)
                        (f[5 + len + 2] << 16) | ((uint32_t)f[5 + len + 3] << 24);
         if (crc32(f, 5 + len) == got) {
             if (f[1] == T_FRAME) {
-                if (handle_frame_payload(f + 5, len)) send_ack(f[2]);   // ACK on success
+                if (have_last_acked_frame_seq && f[2] == last_acked_frame_seq) {
+                    send_ack(f[2]);                  // duplicate retry: ACK, do not re-blit
+                } else if (handle_frame_payload(f + 5, len)) {
+                    last_acked_frame_seq = f[2];
+                    have_last_acked_frame_seq = true;
+                    send_ack(f[2]);                  // ACK on success
+                } else {
+                    send_nack(f[2]);                 // semantic reject: bad rect/RLE shape
+                }
             } else if (f[1] == T_PLAY && len >= 1) {
                 play_sound(f[5]);                  // payload[0] = sound id; fire-and-forget (no ACK)
             } else if (f[1] == T_CONFIG && len >= 1) {
                 if (f[5] < SND_COUNT) g_active_cry.store(f[5]); // 非法 id 拒绝, 不改值
+            } else if (f[1] == T_VOLUME && len == 1) {
+                set_volume(f[5]);                   // malformed/oor values are ignored
             }
             pos += frameLen;
         } else {
@@ -432,8 +489,9 @@ extern "C" void app_main(void)
     assert(audio_queue);
     g_codec = new CodecPort("S3_RLCD_4_2");
     g_codec->open(AUDIO_SR, AUDIO_CH, 16);
-    g_codec->set_volume(80);
+    g_codec->set_volume(g_volume.load());
     synth_all();
     xTaskCreate(audio_task, "audio", 4096, nullptr, 4, nullptr);
     ESP_LOGI(TAG, "B5: codec up; 3 system + 18 species sounds (KEY=active cry, PLAY=evolve/hour)");
+    xTaskCreate(hello_task, "hello", 2048, nullptr, 3, nullptr);
 }

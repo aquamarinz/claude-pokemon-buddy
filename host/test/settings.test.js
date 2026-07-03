@@ -29,6 +29,13 @@ test("accepts partial preference updates", () => {
   assert.deepEqual(result.value, { name: "布布", volume: 0 });
 });
 
+test("accepts an empty name as an explicit reset", () => {
+  const result = validateSettings({ name: "   " });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, { name: "" });
+});
+
 test("rejects rule and hidden switch fields", () => {
   for (const field of ["difficulty", "decayRate", "eggToggle"]) {
     const result = validateSettings({ [field]: "easy" });

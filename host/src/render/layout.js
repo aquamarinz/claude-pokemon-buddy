@@ -4,15 +4,18 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import { EEVEE_IDLE_CRY } from "../pet/cries.js";
 import { zhName } from "../pet/species-meta.js";
 import { drawIdleAccent } from "./idle-accents.js";
-import { H, INK, LEFT_W, LIGHT, MID, PAPER, W } from "./palette.js";
-import { ditherSpriteGray, dilate1bpp, SPRITE_CRISP_THRESHOLD, thresholdSpriteGray } from "./sprites.js";
+import { H, INK, LEFT_W, PAPER, W } from "./palette.js";
+import { layoutText } from "./format.js";
+import { drawSprite, line } from "./sprite-pipeline.js";
+
+export { layoutText, formatReset, money } from "./format.js";
+export { drawSprite, line, px } from "./sprite-pipeline.js";
 
 export const ZPIX_FONT_PATH = fileURLToPath(new URL("../../seed/fonts/zpix.ttf", import.meta.url));
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
 
 const MONO = '"Zpix"';
 const CJK = '"Zpix"';
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MOOD_ZH = { shocked: "震惊", fainted: "力竭", strained: "吃力", focused: "专注", happy: "开心" };
 export const BUDDY_SPRITE_SLOT = 156;
 export const BUDDY_SPRITE_SCALE = 3;
@@ -25,6 +28,8 @@ export function buddyBold(species) {
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
 const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
+const BOND_SOFT_CAP = 180;
+const HEART_MAX = 5;
 
 export function drawGray(model) {
   const canvas = createCanvas(W, H);
@@ -42,25 +47,6 @@ export function drawGray(model) {
   drawBuddyPanel(g, model);
 
   return g.getImageData(0, 0, W, H);
-}
-
-export function layoutText(model = {}) {
-  const weather = model.weather ?? {};
-  const weatherLabel = weather.degraded ? "degraded" : (weather.cond ?? "--");
-  const now = dateOrNow(model.now);
-
-  return {
-    clock: formatClock(model.clock, now),
-    p5h: percentText(model.p5h),
-    pweek: percentText(model.pweek),
-    rateNote: model.rateStale ? "stale" : "",
-    resets5h: formatReset(model.resets5h, now),
-    resetsWeek: formatReset(model.resetsWeek, now),
-    today: `today $${money(model.todayCost)} · ${tokens(model.todayTokens)} tok`,
-    weatherMain: `${weatherLabel} ${value(weather.temp)}°`,
-    weatherFeels: `体感${value(weather.feels)}°`,
-    weatherDetail: `高${value(weather.hi)}°低${value(weather.lo)}° 降${value(weather.precip)}% 风${value(weather.wind)}`,
-  };
 }
 
 function drawLeftPanel(g, model) {
@@ -205,70 +191,6 @@ export function fitTodayLineFont(g, text) {
   });
 }
 
-export function drawSprite(g, spriteGray, {
-  x,
-  y,
-  maxSize = BUDDY_SPRITE_SLOT,
-  size,
-  srcW,
-  srcH,
-  scale = BUDDY_SPRITE_SCALE,
-  mode = "threshold",
-  threshold = SPRITE_CRISP_THRESHOLD,
-  bold = false,
-  boldRadius = 1,
-} = {}) {
-  const pixels = spriteGray instanceof Uint8Array ? spriteGray : placeholderSprite(96, 96);
-  const side = Math.max(1, Math.round(Math.sqrt(pixels.length)));
-  const sourceW = Number.isInteger(srcW) && srcW > 0 ? srcW : (side * side === pixels.length ? side : 96);
-  const sourceH = Number.isInteger(srcH) && srcH > 0 ? srcH : Math.max(1, Math.floor(pixels.length / sourceW));
-  let rendered = mode === "dither"
-    ? ditherSpriteGray(pixels, sourceW, sourceH)
-    : thresholdSpriteGray(pixels, sourceW, sourceH, { threshold });
-  if (bold) rendered = dilate1bpp(rendered, sourceW, sourceH, boldRadius);
-  const spriteCanvas = createCanvas(sourceW, sourceH);
-  const sg = spriteCanvas.getContext("2d");
-  const img = sg.createImageData(sourceW, sourceH);
-
-  for (let i = 0; i < sourceW * sourceH; i += 1) {
-    const v = rendered[i] ?? 255;
-    img.data[i * 4] = v;
-    img.data[i * 4 + 1] = v;
-    img.data[i * 4 + 2] = v;
-    img.data[i * 4 + 3] = v > 245 ? 0 : 255;
-  }
-
-  sg.putImageData(img, 0, 0);
-  const slot = Math.max(1, Math.floor(maxSize ?? size ?? Math.max(sourceW, sourceH)));
-  const integerScale = Math.max(1, Math.floor(scale));
-  const fitScale = Math.max(1, Math.min(integerScale, Math.floor(slot / Math.max(sourceW, sourceH)) || 1));
-  const targetW = sourceW * fitScale;
-  const targetH = sourceH * fitScale;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(
-    spriteCanvas,
-    x + Math.floor((slot - targetW) / 2),
-    y + Math.floor((slot - targetH) / 2),
-    targetW,
-    targetH,
-  );
-}
-
-function placeholderSprite(w, h) {
-  const gray = new Uint8Array(w * h).fill(255);
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const dx = x - w / 2;
-      const dy = y - h / 2;
-      const r = Math.sqrt(dx * dx + dy * dy);
-      if (r < 34) gray[y * w + x] = ((x >> 3) + (y >> 3)) & 1 ? 60 : 180;
-      if (Math.abs(dx) < 9 && Math.abs(dy) < 34) gray[y * w + x] = 30;
-      if (Math.abs(dy) < 9 && Math.abs(dx) < 34) gray[y * w + x] = 30;
-    }
-  }
-  return gray;
-}
-
 function drawMeter(g, x, y, w, h, pct, { striped }) {
   g.strokeStyle = INK;
   g.lineWidth = 2;
@@ -305,10 +227,21 @@ function drawBubble(g, rightX, y, text) {
 }
 
 function drawShadow(g, cx, y) {
-  g.fillStyle = LIGHT;
-  g.beginPath();
-  g.ellipse(cx, y, 57, 10, 0, 0, Math.PI * 2);
-  g.fill();
+  const rx = 57;
+  const ry = 10;
+  const left = Math.ceil(cx - rx);
+  const right = Math.floor(cx + rx);
+  const top = Math.ceil(y - ry);
+  const bottom = Math.floor(y + ry);
+  g.fillStyle = INK;
+  for (let yy = top; yy <= bottom; yy += 1) {
+    for (let xx = left; xx <= right; xx += 1) {
+      if (((xx + yy) & 1) !== 0) continue;
+      const dx = (xx - cx) / rx;
+      const dy = (yy - y) / ry;
+      if (dx * dx + dy * dy <= 1) g.fillRect(xx, yy, 1, 1);
+    }
+  }
   g.fillStyle = INK;
 }
 
@@ -451,16 +384,10 @@ function roundedRect(g, x, y, w, h, r) {
   g.closePath();
 }
 
-function line(g, x1, y1, x2, y2) {
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(x2, y2);
-  g.stroke();
-}
-
 export function heartCount(rawBond) {
-  const v = Math.round(((Number(rawBond) || 0) / 40) * 2) / 2;
-  return Math.max(0, Math.min(5, v));
+  const perHeart = BOND_SOFT_CAP / HEART_MAX;
+  const v = Math.round(((Number(rawBond) || 0) / perHeart) * 2) / 2;
+  return Math.max(0, Math.min(HEART_MAX, v));
 }
 
 function tempHum(v) {
@@ -468,28 +395,6 @@ function tempHum(v) {
   const temp = typeof v.t === "number" && Number.isFinite(v.t) ? v.t.toFixed(1) : "--";
   const humidity = typeof v.h === "number" && Number.isFinite(v.h) ? Math.round(v.h) : "--";
   return `${temp}°C · ${humidity}%`;
-}
-
-function tokens(v) {
-  if (v == null) return "--";
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "--";
-  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(Math.round(n));
-}
-
-function money(v) {
-  if (v == null) return "--";
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "--";
-  if (Math.abs(n) >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toFixed(2);
 }
 
 function fitFont(g, text, { weight, size, minSize, family, maxWidth }) {
@@ -501,51 +406,11 @@ function fitFont(g, text, { weight, size, minSize, family, maxWidth }) {
   return `${weight} ${minSize}px ${family}`;
 }
 
-function value(v) {
-  if (v == null) return "--";
-  const n = Number(v);
-  return Number.isFinite(n) ? String(Math.round(n)) : "--";
-}
-
 function clampPct(v) {
   if (v == null) return 0;
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function percentText(v) {
-  if (v == null) return "--";
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "--";
-  return String(Math.max(0, Math.min(100, Math.round(n))));
-}
-
-function formatClock(clock, now = new Date()) {
-  if (typeof clock === "string" && clock.length > 0) return clock;
-  return hhmm(now);
-}
-
-export function formatReset(value, now = new Date()) {
-  if (typeof value !== "string" || value.length === 0) return "reset unknown";
-  const reset = new Date(value);
-  const base = dateOrNow(now);
-  if (!Number.isFinite(reset.getTime())) return "reset unknown";
-
-  if (isSameLocalDate(reset, base)) {
-    const minutes = Math.max(0, Math.ceil((reset.getTime() - base.getTime()) / 60_000));
-    if (minutes <= 0) return "now";
-    if (minutes < 60) return `in ${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins === 0 ? `in ${hours}h` : `in ${hours}h${mins}m`;
-  }
-
-  if (isSameLocalDate(reset, addLocalDays(base, 1))) {
-    return `tomorrow ${hhmm(reset)}`;
-  }
-
-  return `${MONTHS[reset.getMonth()]} ${pad2(reset.getDate())}, ${hhmm(reset)}`;
 }
 
 export function weatherIconKind(weather = {}) {
@@ -555,27 +420,4 @@ export function weatherIconKind(weather = {}) {
   if (/雾|霾|fog|mist|haze/i.test(cond)) return "fog";
   if (/晴|clear|sun/i.test(cond)) return "sun";
   return "cloud";
-}
-
-function dateOrNow(value) {
-  const date = value instanceof Date ? value : new Date(value ?? Date.now());
-  return Number.isFinite(date.getTime()) ? date : new Date();
-}
-
-function isSameLocalDate(a, b) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function addLocalDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function hhmm(date) {
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-}
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
 }

@@ -1,9 +1,13 @@
 export const MAGIC = 0xA5;
+export const PROTO_VER = 1;
+export const SND_COUNT = 21;
+export const MAX_INBOUND_PAYLOAD = 30016;
 export const T = {
   FRAME: 0x01,
   SOUND_LOAD: 0x02,
   PLAY: 0x03,
   CONFIG: 0x04,
+  VOLUME: 0x25,
   HELLO: 0x81,
   BUTTON: 0x82,
   SENSOR: 0x83,
@@ -48,6 +52,7 @@ function crc32(b) {
 
 export function encodeFrame({ type, seq, payload }) {
   const len = payload.length;
+  if (len > 0xffff) throw new RangeError("payload length exceeds 65535 bytes");
   const head = Uint8Array.from([MAGIC, type, seq, len & 255, (len >> 8) & 255]);
   const body = new Uint8Array(head.length + len);
   body.set(head);

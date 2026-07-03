@@ -57,7 +57,10 @@ static uint8_t crc8(const uint8_t *d, int n) {
 bool Shtc3::read(float *temp_c, float *rh_pct) {
     if (!cmd(CMD_WAKEUP)) return false;
     vTaskDelay(pdMS_TO_TICKS(1));
-    if (!cmd(CMD_MEAS_T_RH)) return false;
+    if (!cmd(CMD_MEAS_T_RH)) {
+        cmd(CMD_SLEEP);
+        return false;
+    }
     vTaskDelay(pdMS_TO_TICKS(20));  // max conversion time
 
     uint8_t raw[6] = {0};

@@ -10,6 +10,9 @@ export async function renderFrame(model) {
 }
 
 export async function imageDataToFrame(image) {
+  if (image?.width !== W || image?.height !== H) {
+    throw new Error(`imageDataToFrame expected ${W}x${H}, got ${image?.width ?? "?"}x${image?.height ?? "?"}`);
+  }
   const gray = rgbaToGray(image.data, W, H);
   const bitmap = grayToBitmap(gray, W, H);
   const pngBuffer = await bitmapToPng(bitmap);

@@ -10,6 +10,7 @@ import {
   pollUsageOnce,
   readOAuthToken,
   toUsageFileShape,
+  writeUsageFile,
 } from "../src/usage-poll.mjs";
 
 const OUT_DIR = fileURLToPath(new URL("../out", import.meta.url));
@@ -121,6 +122,74 @@ test("fetchUsage returns null on non-200 responses and thrown fetches", async ()
   assert.equal(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => { throw new Error("network"); } }), null);
 });
 
+test("pollUsageOnce aborts hung official usage fetch and keeps degraded last-known file", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const usagePath = tempUsagePath(t);
+  const existing = { fiveHourPct: 11, weeklyPct: 22, writtenAt: NOW_SEC - 181 };
+  writeFileSync(usagePath, JSON.stringify(existing));
+  let sawSignal = false;
+  let settled = false;
+
+  const pending = pollUsageOnce({
+    usagePath,
+    now: NOW_MS,
+    readOAuthTokenImpl: () => "token",
+    ccVersionImpl: () => "2.3.4",
+    fetchImpl: async (_url, init = {}) => {
+      sawSignal = init.signal instanceof AbortSignal;
+      if (!init.signal) throw new Error("missing timeout signal");
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      });
+    },
+    timeoutSignal: timeoutSignalFactory(),
+  }).then((result) => {
+    settled = true;
+    return result;
+  });
+  await Promise.resolve();
+
+  assert.equal(sawSignal, true);
+  assert.equal(settled, false);
+  t.mock.timers.tick(9_999);
+  await Promise.resolve();
+  assert.equal(settled, false);
+
+  t.mock.timers.tick(1);
+  assert.deepEqual(await pending, { ok: false, reason: "fetch-failed" });
+  assert.deepEqual(readJson(usagePath), existing);
+});
+
+test("usage file writes use per-writer tmp names and publish parseable JSON", (t) => {
+  const usagePath = tempUsagePath(t);
+  const files = new Map();
+  const tmpWrites = [];
+  const randomIds = ["poll", "bridge"];
+  let randomCalls = 0;
+  const io = {
+    mkdir() {},
+    writeFile(path, body) {
+      tmpWrites.push(path);
+      files.set(path, body);
+    },
+    rename(from, to) {
+      files.set(to, files.get(from));
+      files.delete(from);
+    },
+    pid: 12345,
+    randomId: () => randomIds[randomCalls++],
+  };
+
+  writeUsageFile(usagePath, { writer: "poll" }, io);
+  writeUsageFile(usagePath, { writer: "bridge" }, io);
+
+  assert.deepEqual(tmpWrites, [
+    `${usagePath}.12345.poll.tmp`,
+    `${usagePath}.12345.bridge.tmp`,
+  ]);
+  assert.deepEqual(JSON.parse(files.get(usagePath)), { writer: "bridge" });
+});
+
 test("pollUsageOnce skips network when existing usage file is inside throttle window", async (t) => {
   const usagePath = tempUsagePath(t);
   const existing = { fiveHourPct: 11, weeklyPct: 22, writtenAt: NOW_SEC - 60 };
@@ -213,3 +282,11 @@ test("pollUsageOnce keeps existing file when fetch fails", async (t) => {
   assert.deepEqual(result, { ok: false, reason: "fetch-failed" });
   assert.deepEqual(readJson(usagePath), existing);
 });
+
+function timeoutSignalFactory() {
+  return (ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("timeout")), ms);
+    return controller.signal;
+  };
+}

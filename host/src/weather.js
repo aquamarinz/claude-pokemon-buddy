@@ -13,7 +13,13 @@ const WMO = {
   95: "雷雨",
 };
 
-export function makeWeather({ fetch = globalThis.fetch, ttlMs = 30 * 60 * 1000 } = {}) {
+const FETCH_TIMEOUT_MS = 10_000;
+
+export function makeWeather({
+  fetch = globalThis.fetch,
+  ttlMs = 30 * 60 * 1000,
+  timeoutSignal = defaultTimeoutSignal,
+} = {}) {
   let last = null;
   let lastAt = 0;
   let lastKey = null;
@@ -25,7 +31,9 @@ export function makeWeather({ fetch = globalThis.fetch, ttlMs = 30 * 60 * 1000 }
       if (last && key === lastKey && now - lastAt < ttlMs) return { ...last, degraded: false };
 
       try {
-        const response = await fetch(weatherUrl(lat, lon));
+        const response = await fetch(weatherUrl(lat, lon), {
+          signal: timeoutSignal(FETCH_TIMEOUT_MS),
+        });
         if (!response.ok) throw new Error("weather request failed");
 
         const json = await response.json();
@@ -34,10 +42,26 @@ export function makeWeather({ fetch = globalThis.fetch, ttlMs = 30 * 60 * 1000 }
         lastKey = key;
         return { ...last, degraded: false };
       } catch {
-        return last ? { ...last, degraded: true } : { cond: "—", temp: null, degraded: true };
+        return last && key === lastKey
+          ? { ...last, degraded: true }
+          : nullWeather();
       }
     },
   };
+}
+
+function defaultTimeoutSignal(ms) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("timeout")), ms);
+  timer.unref?.();
+  return controller.signal;
+}
+
+function nullWeather() {
+  return { cond: "—", temp: null, degraded: true };
 }
 
 function weatherUrl(lat, lon) {

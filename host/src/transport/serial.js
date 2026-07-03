@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { SerialPort as NodeSerialPort } from "serialport";
 
-import { decodeFrame, encodeFrame, MAGIC, T } from "./proto.js";
+import { decodeFrame, encodeFrame, MAGIC, PROTO_VER, SND_COUNT, T } from "./proto.js";
 
 const ESPRESSIF_VID = "303A";
 const DEFAULT_BAUD_RATE = 115200;
@@ -69,6 +69,7 @@ export function makeTransport({
   reconnectDelayMs = 1500,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
+  logger = console,
 } = {}) {
   if (!port) throw new Error("port is required");
 
@@ -83,6 +84,9 @@ export function makeTransport({
   let detachPort = () => {};
   let nextSeq = 0;
   let latestSensor = null;
+  let latestHello = null;
+  let warnedProtoMismatch = false;
+  let warnedSoundMismatch = false;
 
   attachPort(port);
 
@@ -122,12 +126,8 @@ export function makeTransport({
     clearTimeout(current.timer);
     current.timer = setTimeout(() => {
       if (pending !== current) return;
-      if (current.sends <= maxRetries) {
-        sendPending();
-        return;
-      }
-      finishPending({ ok: false, stale: true, seq: current.seq });
-    }, timeoutMs);
+      retryPendingOrFinish(current);
+    }, retryTimeoutFor(current.payload.length));
     try {
       currentPort.write(bytes, (error) => {
         if (error && pending === current) handleDisconnect();
@@ -180,12 +180,18 @@ export function makeTransport({
     }
 
     if (frame.type === T.NACK) {
-      if (pending && ackSeq(frame) === pending.seq) sendPending();
+      if (pending && ackSeq(frame) === pending.seq) retryPendingOrFinish(pending);
+      return;
+    }
+
+    if (frame.type === T.HELLO) {
+      handleHello(frame.payload);
       return;
     }
 
     if (frame.type === T.BUTTON) {
-      events.emit("button", parseButton(frame.payload));
+      const button = parseButton(frame.payload);
+      if (button) events.emit("button", button);
       return;
     }
 
@@ -203,10 +209,35 @@ export function makeTransport({
     pump();
   }
 
+  function retryPendingOrFinish(current) {
+    if (pending !== current) return;
+    if (current.sends <= maxRetries) {
+      sendPending();
+      return;
+    }
+    finishPending({ ok: false, stale: true, seq: current.seq });
+  }
+
+  function handleHello(payload) {
+    const hello = parseHello(payload);
+    if (!hello) return;
+    latestHello = hello;
+    if (hello.protoVer !== PROTO_VER && !warnedProtoMismatch) {
+      warnedProtoMismatch = true;
+      logger?.warn?.(`ESP firmware protocol version ${hello.protoVer} does not match host protocol version ${PROTO_VER}`);
+    }
+    if (hello.sndCount < SND_COUNT && !warnedSoundMismatch) {
+      warnedSoundMismatch = true;
+      logger?.warn?.(`ESP firmware sound table has ${hello.sndCount} sounds; host requires ${SND_COUNT}`);
+    }
+  }
+
   function handleDisconnect() {
     if (!connected) return;
 
     connected = false;
+    rx = new Uint8Array(0);
+    latestSensor = null;
     detachPort();
     resolveDisconnected();
     if (openPort && !stopped) scheduleReconnect();
@@ -239,6 +270,11 @@ export function makeTransport({
       nextPort = await openPort();
     } catch {
       nextPort = null;
+    }
+
+    if (stopped) {
+      nextPort?.close?.();
+      return;
     }
 
     if (!nextPort) {
@@ -278,34 +314,32 @@ export function makeTransport({
     };
   }
 
+  function writeFireAndForget(type, payload) {
+    if (!connected) return;
+    const writePort = currentPort;
+    try {
+      writePort.write(
+        encodeFrame({ type, seq: 0, payload }),
+        (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
+      );
+    } catch {
+      if (writePort === currentPort && connected) handleDisconnect();
+    }
+  }
+
   return {
     pushFrame,
     playSound(soundId) {
-      if (!connected) return;
       // Fire-and-forget: device doesn't ACK PLAY. Surface an async write error to the
       // reconnect path, but only if it's still THIS port (a stale callback from an old
       // port must not tear down a reconnected session).
-      const writePort = currentPort;
-      try {
-        writePort.write(
-          encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
-        );
-      } catch {
-        handleDisconnect();
-      }
+      writeFireAndForget(T.PLAY, Uint8Array.from([soundId & 0xff]));
     },
     setActiveCry(soundId) {
-      if (!connected) return;
-      const writePort = currentPort;
-      try {
-        writePort.write(
-          encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
-        );
-      } catch {
-        handleDisconnect();
-      }
+      writeFireAndForget(T.CONFIG, Uint8Array.from([soundId & 0xff]));
+    },
+    sendVolume(volume) {
+      writeFireAndForget(T.VOLUME, Uint8Array.from([volumeByte(volume)]));
     },
     onReconnect(callback) {
       events.on("reconnect", callback);
@@ -322,16 +356,23 @@ export function makeTransport({
     feedSensor() {
       return latestSensor ? { ...latestSensor } : null;
     },
+    getHello() {
+      return latestHello ? { ...latestHello } : null;
+    },
     close() {
       stopped = true;
       connected = false;
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
-      clearTimeout(pending?.timer);
+      resolveDisconnected();
       detachPort();
       currentPort.close?.();
     },
   };
+
+  function retryTimeoutFor(payloadLength) {
+    return Math.max(DEFAULT_TIMEOUT_MS, timeoutMs, 150 + Math.ceil(payloadLength / 16));
+  }
 }
 
 function normalizeVid(vendorId) {
@@ -359,9 +400,18 @@ function removeListener(emitter, eventName, listener) {
 }
 
 function parseButton(payload) {
+  if (payload.length < 2) return null;
   return {
     key: BUTTON_KEYS.get(payload[0]) ?? `KEY_${payload[0]}`,
     kind: BUTTON_KINDS.get(payload[1]) ?? `evt_${payload[1]}`,
+  };
+}
+
+function parseHello(payload) {
+  if (payload.length < 2) return null;
+  return {
+    protoVer: payload[0],
+    sndCount: payload[1],
   };
 }
 
@@ -372,4 +422,10 @@ function parseSensor(payload) {
     t: view.getInt16(0, true) / 10,
     h: payload[2],
   };
+}
+
+function volumeByte(value) {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(volume)));
 }

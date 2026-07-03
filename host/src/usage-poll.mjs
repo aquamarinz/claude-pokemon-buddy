@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +10,7 @@ export const USAGE_PATH = join(homedir(), ".claude", "cpb-usage.json");
 const DEFAULT_VERSION = "2.1.0";
 const OAUTH_BETA = "oauth-2025-04-20";
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
+const FETCH_TIMEOUT_MS = 10_000;
 
 export function readOAuthToken({
   platform = process.platform,
@@ -35,11 +37,15 @@ export function ccVersion({ exec = runCommand } = {}) {
   }
 }
 
-export async function fetchUsage(token, { version = DEFAULT_VERSION, fetchImpl = globalThis.fetch } = {}) {
+export async function fetchUsage(
+  token,
+  { version = DEFAULT_VERSION, fetchImpl = globalThis.fetch, timeoutSignal = defaultTimeoutSignal } = {},
+) {
   try {
     if (!token || typeof fetchImpl !== "function") return null;
     const res = await fetchImpl(USAGE_ENDPOINT, {
       method: "GET",
+      signal: timeoutSignal(FETCH_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${token}`,
         "anthropic-beta": OAUTH_BETA,
@@ -77,6 +83,7 @@ export async function pollUsageOnce({
   readOAuthTokenImpl = readOAuthToken,
   ccVersionImpl = ccVersion,
   fetchUsageImpl = fetchUsage,
+  timeoutSignal = defaultTimeoutSignal,
   mkdir = mkdirSync,
   writeFile = writeFileSync,
   rename = renameSync,
@@ -91,7 +98,7 @@ export async function pollUsageOnce({
     if (!token) return { ok: false, reason: "no-token" };
 
     const resolvedVersion = version ?? ccVersionImpl({ exec });
-    const apiResp = await fetchUsageImpl(token, { version: resolvedVersion, fetchImpl });
+    const apiResp = await fetchUsageImpl(token, { version: resolvedVersion, fetchImpl, timeoutSignal });
     if (!apiResp) return { ok: false, reason: "fetch-failed" };
 
     const out = toUsageFileShape(apiResp, nowMs);
@@ -137,11 +144,35 @@ function isThrottled({ usagePath, nowMs, minIntervalSec, readFile }) {
   }
 }
 
-function writeUsageFile(path, out, { mkdir, writeFile, rename }) {
+export function writeUsageFile(
+  path,
+  out,
+  {
+    mkdir = mkdirSync,
+    writeFile = writeFileSync,
+    rename = renameSync,
+    pid = process.pid,
+    randomId = randomUUID,
+  } = {},
+) {
   mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
+  const tmp = usageTmpPath(path, { pid, randomId });
   writeFile(tmp, JSON.stringify(out));
   rename(tmp, path);
+}
+
+export function usageTmpPath(path, { pid = process.pid, randomId = randomUUID } = {}) {
+  return `${path}.${pid}.${randomId()}.tmp`;
+}
+
+function defaultTimeoutSignal(ms) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("timeout")), ms);
+  timer.unref?.();
+  return controller.signal;
 }
 
 function numOrNull(value) {

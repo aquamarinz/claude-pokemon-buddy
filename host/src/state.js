@@ -11,12 +11,13 @@ import {
 import { dirname } from "node:path";
 
 export const SCHEMA_VERSION = 1;
+const STONES = new Set(["water", "thunder", "fire"]);
 
 export function saveState(path, state) {
   const tmp = `${path}.tmp`;
   const bak = `${path}.bak`;
 
-  if (existsSync(path)) {
+  if (isParseableJsonFile(path)) {
     copyFileSync(path, bak);
   }
 
@@ -80,6 +81,10 @@ function salvageState(state) {
   copyBoolean(out, state, "readyToEvolve");
   copyBoolean(out, state, "hatched");
   copyString(out, state, "name");
+  copyIv(out, state, "iv");
+  copyString(out, state, "nature");
+  copyString(out, state, "characteristic");
+  copyStone(out, state, "stone");
   if (Array.isArray(state.pendingCandidates)) out.pendingCandidates = state.pendingCandidates;
   return out;
 }
@@ -98,6 +103,31 @@ function copyNumber(out, state, key) {
 
 function copyBoolean(out, state, key) {
   if (typeof state[key] === "boolean") out[key] = state[key];
+}
+
+function copyIv(out, state, key) {
+  const value = state[key];
+  if (
+    Array.isArray(value) &&
+    value.length === 6 &&
+    value.every((item) => Number.isInteger(item) && item >= 0 && item <= 31)
+  ) {
+    out[key] = value;
+  }
+}
+
+function copyStone(out, state, key) {
+  if (STONES.has(state[key])) out[key] = state[key];
+}
+
+function isParseableJsonFile(path) {
+  if (!existsSync(path)) return false;
+  try {
+    JSON.parse(readFileSync(path, "utf8"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function fsyncFile(path) {

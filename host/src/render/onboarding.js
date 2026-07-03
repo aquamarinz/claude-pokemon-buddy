@@ -2,24 +2,13 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 import { H, INK, PAPER, W } from "./palette.js";
 import { imageDataToFrame } from "./frame.js";
-import { ZPIX_FONT_PATH, drawSprite } from "./layout.js";
+import { ZPIX_FONT_PATH } from "./layout.js";
+import { drawSprite, line, px } from "./sprite-pipeline.js";
 import { loadBuddySprite, loadOakSprite } from "./sprites.js";
 
 GlobalFonts.registerFromPath(ZPIX_FONT_PATH, "Zpix");
-const MONO = '"Zpix"';
 
 const HATCH_FRAMES = 12;
-
-function px(g, t, x, y, size, align = "left", weight = 700) {
-  g.font = `${weight} ${size}px ${MONO}`;
-  g.textBaseline = "alphabetic";
-  // Zpix 点阵字过 1-bit 阈值时, 左边缘必须落在整数像素, 否则 center/right 的半像素错位→抗锯齿→碎裂。
-  // 自己算左边缘并 round, 用 left 对齐画。
-  g.textAlign = "left";
-  const width = align === "left" ? 0 : g.measureText(t).width;
-  const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
-  g.fillText(t, Math.round(left), Math.round(y));
-}
 
 export async function renderOnboarding(scene) {
   const canvas = createCanvas(W, H);
@@ -78,9 +67,9 @@ function drawChoose(g, candidates, sel) {
 
   // 候选 chip：只蛋 + 编号(去掉糊的小中文名，靠中央大名识别)
   const bx = 24;
-  const bw = (W - 48 - 18) / 4;
+  const bw = Math.round((W - 48 - 18) / 4);
   candidates.forEach((candidate, i) => {
-    const x = bx + i * (bw + 6);
+    const x = Math.round(bx + i * (bw + 6));
     const y = 194;
     const h = 64;
     const on = i === sel;
@@ -93,7 +82,7 @@ function drawChoose(g, candidates, sel) {
       g.strokeStyle = INK;
       g.fillStyle = INK;
       g.lineWidth = 1;
-      g.strokeRect(x, y, bw, h);
+      chipBorder(g, x, y, bw, h);
     }
     drawEgg(g, candidate.species, x + bw / 2, y + 28, 0.42);
     px(g, "#" + (i + 1), x + bw / 2, y + 56, 12, "center", on ? 800 : 600);
@@ -102,6 +91,13 @@ function drawChoose(g, candidates, sel) {
   });
   g.lineWidth = 2;
   px(g, "KEY 切换 · 长按确认", W / 2, H - 16, 12, "center", 600);
+}
+
+function chipBorder(g, x, y, w, h) {
+  g.fillRect(x, y, w, 1);
+  g.fillRect(x, y + h - 1, w, 1);
+  g.fillRect(x, y, 1, h);
+  g.fillRect(x + w - 1, y, 1, h);
 }
 
 async function drawHatch(g, frame, species) {
@@ -321,11 +317,4 @@ function critter(g, cx, cy) {
   g.fill();
   g.restore();
   g.fillStyle = INK;
-}
-
-function line(g, x1, y1, x2, y2) {
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(x2, y2);
-  g.stroke();
 }

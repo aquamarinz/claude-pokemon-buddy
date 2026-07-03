@@ -16,6 +16,8 @@ enum ColorSelection {
 
 class DisplayPort {
 private:
+    static constexpr int kLandscapeWidth = 400;
+    static constexpr int kLandscapeHeight = 300;
     esp_lcd_panel_io_handle_t io_handle = NULL;
     uint32_t            i2c_data_pdMS_TICKS = 0;
     uint32_t            i2c_done_pdMS_TICKS = 0;
@@ -30,9 +32,8 @@ private:
     uint8_t            *DispBuffer = NULL;
     int                 DisplayLen;
 #if (AlgorithmOptimization == 3)
-	uint16_t (*PixelIndexLUT)[300];
-	uint8_t  (*PixelBitLUT  )[300];
-	void InitPortraitLUT();
+	uint16_t (*PixelIndexLUT)[kLandscapeHeight];
+	uint8_t  (*PixelBitLUT  )[kLandscapeHeight];
 	void InitLandscapeLUT();
 #endif
 

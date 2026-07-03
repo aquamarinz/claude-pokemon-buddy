@@ -11,7 +11,7 @@ export function validateSettings(input) {
   if ("name" in input) {
     if (typeof input.name !== "string") return fail("name must be a string");
     const name = input.name.trim();
-    if (name.length === 0 || name.length > 16) return fail("name must be 1-16 characters");
+    if (name.length > 16) return fail("name must be 0-16 characters");
     value.name = name;
   }
 
