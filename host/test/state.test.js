@@ -35,6 +35,30 @@ test("saveState creates backup and corrupt main falls back to previous backup", 
   assert.equal(loadState(file).level, 7);
 });
 
+test("saveState preserves a good backup when the primary is corrupt", (t) => {
+  const { file } = tempState(t);
+  writeFileSync(file, "{corrupt-primary");
+  writeFileSync(`${file}.bak`, JSON.stringify({ schemaVersion: SCHEMA_VERSION, level: 7 }));
+
+  saveState(file, { level: 8 });
+
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).level, 8);
+  assert.deepEqual(JSON.parse(readFileSync(`${file}.bak`, "utf8")), {
+    schemaVersion: SCHEMA_VERSION,
+    level: 7,
+  });
+});
+
+test("saveState refreshes backup when the primary is parseable", (t) => {
+  const { file } = tempState(t);
+  writeFileSync(file, JSON.stringify({ schemaVersion: SCHEMA_VERSION, level: 7 }));
+
+  saveState(file, { level: 8 });
+
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).level, 8);
+  assert.equal(JSON.parse(readFileSync(`${file}.bak`, "utf8")).level, 7);
+});
+
 test("loadState safely rebuilds and salvages parseable fields when main and backup are invalid", (t) => {
   const { file } = tempState(t);
   const warnings = [];

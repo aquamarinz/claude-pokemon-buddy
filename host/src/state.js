@@ -17,7 +17,7 @@ export function saveState(path, state) {
   const tmp = `${path}.tmp`;
   const bak = `${path}.bak`;
 
-  if (existsSync(path)) {
+  if (isParseableJsonFile(path)) {
     copyFileSync(path, bak);
   }
 
@@ -118,6 +118,16 @@ function copyIv(out, state, key) {
 
 function copyStone(out, state, key) {
   if (STONES.has(state[key])) out[key] = state[key];
+}
+
+function isParseableJsonFile(path) {
+  if (!existsSync(path)) return false;
+  try {
+    JSON.parse(readFileSync(path, "utf8"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function fsyncFile(path) {

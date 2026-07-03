@@ -18,8 +18,10 @@ export function startWebServer({
   framePath = "out/frame.png",
   publicDir = DEFAULT_PUBLIC_DIR,
 } = {}) {
+  let allowedHosts = null;
   const server = http.createServer(async (req, res) => {
     try {
+      if (!validateRequestEntry(req, res, allowedHosts)) return;
       await routeRequest(req, res, {
         getView,
         saveSettings,
@@ -38,6 +40,7 @@ export function startWebServer({
     server.listen(port, host, () => {
       server.off("error", reject);
       const address = server.address();
+      allowedHosts = allowedHostHeaders(address.port);
       resolve({
         host: address.address,
         port: address.port,
@@ -46,6 +49,34 @@ export function startWebServer({
       });
     });
   });
+}
+
+function validateRequestEntry(req, res, allowedHosts) {
+  const host = req.headers.host;
+  if (!allowedHosts?.has(typeof host === "string" ? host.toLowerCase() : "")) {
+    respondJson(res, 403, { error: "forbidden host" });
+    return false;
+  }
+
+  if (req.method === "POST" && !isJsonContentType(req.headers["content-type"])) {
+    respondJson(res, 415, { error: "content-type must be application/json" });
+    return false;
+  }
+
+  return true;
+}
+
+function allowedHostHeaders(port) {
+  return new Set([
+    `127.0.0.1:${port}`,
+    `localhost:${port}`,
+    `[::1]:${port}`,
+  ]);
+}
+
+function isJsonContentType(value) {
+  if (typeof value !== "string") return false;
+  return value.split(";", 1)[0].trim().toLowerCase() === "application/json";
 }
 
 async function routeRequest(req, res, context) {
@@ -59,8 +90,9 @@ async function routeRequest(req, res, context) {
   if (req.method === "POST" && url.pathname === "/api/settings") {
     let body;
     try {
-      body = await readJsonBody(req);
+      body = await readJsonBody(req, res);
     } catch (error) {
+      if (error.responded) return;
       respondJson(res, 400, { error: error.message });
       return;
     }
@@ -84,8 +116,9 @@ async function routeRequest(req, res, context) {
   if (req.method === "POST" && url.pathname === "/api/evolution/choose") {
     let body;
     try {
-      body = await readJsonBody(req);
+      body = await readJsonBody(req, res);
     } catch (error) {
+      if (error.responded) return;
       respondJson(res, 400, { error: error.message });
       return;
     }
@@ -108,8 +141,9 @@ async function routeRequest(req, res, context) {
   if (req.method === "POST" && url.pathname === "/api/evolution/stone") {
     let body;
     try {
-      body = await readJsonBody(req);
+      body = await readJsonBody(req, res);
     } catch (error) {
+      if (error.responded) return;
       respondJson(res, 400, { error: error.message });
       return;
     }
@@ -142,25 +176,39 @@ async function routeRequest(req, res, context) {
   respondJson(res, 404, { error: "not found" });
 }
 
-function readJsonBody(req, limit = 16 * 1024) {
+function readJsonBody(req, res, limit = 16 * 1024) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let bytes = 0;
+    let settled = false;
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
+      if (settled) return;
       body += chunk;
-      if (body.length > limit) {
-        reject(new Error("request body too large"));
-        req.destroy();
+      bytes += Buffer.byteLength(chunk, "utf8");
+      if (bytes > limit) {
+        settled = true;
+        respondJson(res, 413, { error: "request body too large" });
+        res.once("finish", () => req.destroy());
+        const error = new Error("request body too large");
+        error.responded = true;
+        reject(error);
       }
     });
     req.on("end", () => {
+      if (settled) return;
+      settled = true;
       try {
         resolve(body.length > 0 ? JSON.parse(body) : {});
       } catch {
         reject(new Error("invalid JSON body"));
       }
     });
-    req.on("error", reject);
+    req.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
