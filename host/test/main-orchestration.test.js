@@ -4,7 +4,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
 
-import { main, runTickLoop } from "../src/index.js";
+import { createButtonDispatcher, main, runOneTick, runTickLoop } from "../src/index.js";
+import { OAK_LINES } from "../src/pet/onboarding-data.js";
 
 const blocksJson = readFileSync(new URL("./fixtures/ccusage-blocks.json", import.meta.url), "utf8");
 const dailyJson = readFileSync(new URL("./fixtures/ccusage-daily.json", import.meta.url), "utf8");
@@ -159,8 +160,279 @@ test("a button that arrived before the tick is buffered and drained into the tic
   assert.equal(state.careCount, 1); // buffered KEY-long was drained into runOneTick -> care recorded
 });
 
+test("button emitted while runOneTick is active is routed to the next tick exactly once (RH3)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-rh3-midtick-state.json");
+  const framePath = join("out", "test-rh3-midtick-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  writeState(statePath, { species: "bulbasaur", level: 30, bond: 0 });
+
+  const transport = createButtonEventTransport({
+    onFeedSensor: ({ calls, transport }) => {
+      if (calls === 1) transport.emitButton({ key: "KEY", kind: "short" });
+    },
+  });
+  let runtimePet;
+  const dispatcher = createButtonDispatcher({
+    transport,
+    getPet: () => runtimePet,
+  });
+
+  runtimePet = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    statePath,
+    framePath,
+    transport,
+    pendingButtons: dispatcher.drainTickEvents(),
+    today: "2026-05-30",
+    now: new Date(2026, 4, 30, 10),
+    evolutionDelay: async () => {},
+  });
+  assert.equal(runtimePet.species, "bulbasaur");
+
+  runtimePet = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    statePath,
+    framePath,
+    transport,
+    pendingButtons: dispatcher.drainTickEvents(),
+    today: "2026-05-30",
+    now: new Date(2026, 4, 30, 10),
+    evolutionDelay: async () => {},
+  });
+  assert.equal(runtimePet.species, "ivysaur");
+
+  runtimePet = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    statePath,
+    framePath,
+    transport,
+    pendingButtons: dispatcher.drainTickEvents(),
+    today: "2026-05-30",
+    now: new Date(2026, 4, 30, 10),
+    evolutionDelay: async () => {},
+  });
+  assert.equal(runtimePet.species, "ivysaur");
+  assert.equal(transport.maxListenerCount(), 1);
+  dispatcher.stop();
+});
+
+test("failed tick drains requeue once and do not leak button listeners (RH3)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-rh3-requeue-state.json");
+  const framePath = join("out", "test-rh3-requeue-frame.png");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  writeState(statePath, { species: "eevee", bond: 0 });
+
+  const transport = createButtonEventTransport({
+    onFeedSensor: ({ calls }) => {
+      if (calls === 1) throw new Error("sensor failed");
+    },
+  });
+  const dispatcher = createButtonDispatcher({ transport });
+  transport.emitButton({ key: "KEY", kind: "long" });
+
+  const firstDrain = dispatcher.drainTickEvents();
+  await assert.rejects(
+    runOneTick({
+      usage: usageWithTokens(0),
+      weather: sampleWeather(),
+      statePath,
+      framePath,
+      transport,
+      pendingButtons: firstDrain,
+      today: "2026-05-30",
+    }),
+    /sensor failed/,
+  );
+  assert.equal(dispatcher.requeueForRetry(firstDrain), 1);
+  assert.equal(transport.maxListenerCount(), 1);
+
+  const pet = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: sampleWeather(),
+    statePath,
+    framePath,
+    transport,
+    pendingButtons: dispatcher.drainTickEvents(),
+    today: "2026-05-30",
+  });
+
+  assert.equal(pet.careCount, 1);
+  assert.deepEqual(dispatcher.drainTickEvents(), []);
+  assert.equal(transport.maxListenerCount(), 1);
+  dispatcher.stop();
+});
+
+test("onboarding button handling is isolated before the resident dispatcher starts (RH3)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-rh3-onboarding-state.json");
+  const framePath = join("out", "test-rh3-onboarding-frame.png");
+  const configPath = join("out", "test-rh3-onboarding-config.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+
+  const transport = createOnboardingTransport();
+  await main({
+    once: true,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    transport,
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => (args.includes("daily") ? dailyJson : blocksJson),
+  });
+
+  const state = JSON.parse(readFileSync(statePath, "utf8"));
+  assert.equal(state.hatched, true);
+  assert.equal(state.species, "eevee");
+  assert.equal(state.careCount, undefined);
+  assert.equal(transport.maxListenerCount(), 1);
+  assert.equal(transport.subscriptionCount(), 2); // onboarding, then resident dispatcher after onboarding cleanup
+});
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function writeState(statePath, overrides = {}) {
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "eevee",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 0,
+      shield: 0,
+      lastSettled: "2026-05-30",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      nature: "Brave",
+      iv: [1, 2, 3, 4, 5, 6],
+      characteristic: "Likes to run",
+      ...overrides,
+    }),
+  );
+}
+
+function usageWithTokens(todayTokens) {
+  return {
+    p5h: 12,
+    pweek: 34,
+    todayCost: 1,
+    todayTokens,
+    modelled: true,
+    weekTokens: todayTokens,
+  };
+}
+
+function sampleWeather() {
+  return {
+    cond: "多云",
+    temp: 19,
+    feels: 17,
+    hi: 22,
+    lo: 14,
+    precip: 30,
+    wind: 11,
+    humidity: 64,
+  };
+}
+
+function createButtonEventTransport({ onFeedSensor = () => {} } = {}) {
+  const emitter = new EventEmitter();
+  let feedCalls = 0;
+  let maxListeners = 0;
+  const updateMaxListeners = () => {
+    maxListeners = Math.max(maxListeners, emitter.listenerCount("button"));
+  };
+  const transport = {
+    onButton(callback) {
+      emitter.on("button", callback);
+      updateMaxListeners();
+      return () => {
+        emitter.off("button", callback);
+        updateMaxListeners();
+      };
+    },
+    emitButton(event) {
+      emitter.emit("button", event);
+    },
+    async push() {
+      return { ok: true };
+    },
+    feedSensor() {
+      feedCalls += 1;
+      onFeedSensor({ calls: feedCalls, transport });
+      updateMaxListeners();
+      return { t: 23, h: 56 };
+    },
+    playSound() {},
+    setActiveCry() {},
+    maxListenerCount() {
+      return maxListeners;
+    },
+  };
+  return transport;
+}
+
+function createOnboardingTransport() {
+  const emitter = new EventEmitter();
+  let subscriptions = 0;
+  let pushes = 0;
+  let maxListeners = 0;
+  const updateMaxListeners = () => {
+    maxListeners = Math.max(maxListeners, emitter.listenerCount("button"));
+  };
+  const emitAfterPush = (event) => setImmediate(() => emitter.emit("button", event));
+  return {
+    onButton(callback) {
+      subscriptions += 1;
+      emitter.on("button", callback);
+      updateMaxListeners();
+      return () => {
+        emitter.off("button", callback);
+        updateMaxListeners();
+      };
+    },
+    async push() {
+      pushes += 1;
+      if (pushes <= OAK_LINES.length) {
+        emitAfterPush({ key: "KEY", kind: "short" });
+      } else if (pushes === OAK_LINES.length + 1) {
+        emitAfterPush({ key: "KEY", kind: "long" });
+      } else if (pushes === OAK_LINES.length + 14) {
+        emitAfterPush({ key: "KEY", kind: "short" });
+      }
+      return { ok: true };
+    },
+    feedSensor() {
+      return { t: 23, h: 56 };
+    },
+    playSound() {},
+    setActiveCry() {},
+    close() {},
+    maxListenerCount() {
+      return maxListeners;
+    },
+    subscriptionCount() {
+      return subscriptions;
+    },
+  };
 }

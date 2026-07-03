@@ -55,6 +55,14 @@ export function shouldPlaySignature(event, pet) {
   return event?.key === "KEY" && event?.kind === "short" && pet?.readyToEvolve === false;
 }
 
+export function shouldQueueButtonForTick(event) {
+  return event?.key === "KEY" && (
+    event.kind === "short" ||
+    event.kind === "long" ||
+    event.kind === "double"
+  );
+}
+
 // 串行化动作：tick 与招牌经同一队列互斥，杜绝 tick 帧插进招牌帧序列之间。
 export function createActionQueue() {
   let chain = Promise.resolve();
@@ -63,6 +71,49 @@ export function createActionQueue() {
       const result = chain.then(fn);
       chain = result.then(() => {}, () => {});
       return result;
+    },
+  };
+}
+
+export function createButtonDispatcher({
+  transport,
+  getPet = () => undefined,
+  getModel = () => null,
+  actions = createActionQueue(),
+  animator = { pause() {}, resume() {} },
+  playSignature = playSignatureAnimation,
+  onSignatureError = () => {},
+} = {}) {
+  const tickQueue = [];
+  const off = transport?.onButton?.((event) => {
+    if (shouldPlaySignature(event, getPet())) {
+      const pressModel = getModel();
+      if (pressModel) {
+        actions.run(async () => {
+          animator.pause();
+          try { await playSignature({ transport, model: pressModel }); }
+          finally { animator.resume(); }
+        }).catch(onSignatureError);
+      }
+      return;
+    }
+
+    if (shouldQueueButtonForTick(event)) tickQueue.push(event);
+  });
+
+  return {
+    drainTickEvents() {
+      return tickQueue.splice(0);
+    },
+    requeueForRetry(events) {
+      const retry = events
+        .filter((event) => event && !event.requeued)
+        .map((event) => ({ ...event, requeued: true }));
+      tickQueue.unshift(...retry);
+      return retry.length;
+    },
+    stop() {
+      off?.();
     },
   };
 }
@@ -88,8 +139,9 @@ export async function runOneTick({
 
   mkdirSync(dirname(statePath), { recursive: true });
   const activeTransport = transport ?? (mock ? adaptPngTransport(mock) : await transportFactory({ framePath }));
-  const buttonEvents = Array.isArray(pendingButtons) ? [...pendingButtons] : [];
-  const offButtons = activeTransport.onButton?.((event) => buttonEvents.push(event));
+  const buttonEvents = Array.isArray(pendingButtons)
+    ? [...pendingButtons]
+    : collectStandaloneButtonSnapshot(activeTransport);
   const sensor = room ?? activeTransport.feedSensor?.();
   let pet = ensurePet(loadState(statePath), today, personalityRng);
   pet = settleDays(pet, today, {
@@ -158,7 +210,6 @@ export async function runOneTick({
   const { pngBuffer, bitmap } = await renderFrame(model);
 
   saveState(statePath, pet);
-  offButtons?.();
   await activeTransport.push({ pngBuffer, bitmap });
 
   return pet;
@@ -202,18 +253,13 @@ export async function main({
   let resolveLoopSleep = null;
   let runtime = {};
   const actions = createActionQueue();
-  const buttonBuffer = [];
-  const offButtonBuffer = transport.onButton?.((event) => buttonBuffer.push(event));
-  let signaturePlaying = false;
-  const offSignature = transport.onButton?.((event) => {
-    if (signaturePlaying || !currentModel || !shouldPlaySignature(event, runtime.pet)) return;
-    const pressModel = currentModel; // snapshot at press time; a later tick may reassign currentModel
-    signaturePlaying = true;
-    actions.run(async () => {
-      animator.pause();
-      try { await playSignatureAnimation({ transport, model: pressModel }); }
-      finally { animator.resume(); }
-    }).catch(() => {}).finally(() => { signaturePlaying = false; });
+  const buttonDispatcher = createButtonDispatcher({
+    transport,
+    getPet: () => runtime.pet,
+    getModel: () => currentModel,
+    actions,
+    animator,
+    onSignatureError: () => {},
   });
   const dashboardServer = dashboard
     ? await startDashboardServer({
@@ -234,8 +280,7 @@ export async function main({
     timer = null;
     resolveLoopSleep?.();
     resolveLoopSleep = null;
-    offSignature?.();
-    offButtonBuffer?.();
+    buttonDispatcher.stop();
     animator.stop();
     dashboardServer?.close().catch(() => {});
     transport.close?.();
@@ -256,16 +301,23 @@ export async function main({
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
         const room = transport.feedSensor();
-        const pet = await runOneTick({
-          usage,
-          weather,
-          room,
-          statePath,
-          framePath,
-          transport,
-          onRenderModel: (model) => { currentModel = model; },
-          pendingButtons: buttonBuffer.splice(0),
-        });
+        const pendingButtons = buttonDispatcher.drainTickEvents();
+        let pet;
+        try {
+          pet = await runOneTick({
+            usage,
+            weather,
+            room,
+            statePath,
+            framePath,
+            transport,
+            onRenderModel: (model) => { currentModel = model; },
+            pendingButtons,
+          });
+        } catch (error) {
+          buttonDispatcher.requeueForRetry(pendingButtons);
+          throw error;
+        }
         runtime = { usage, weather, room, pet };
         const hour = new Date().getHours();
         if (hour !== lastHour) {
@@ -374,6 +426,16 @@ function adaptPngTransport(transport) {
       return transport.push(frame?.pngBuffer ?? frame);
     },
   };
+}
+
+function collectStandaloneButtonSnapshot(transport) {
+  const events = [];
+  const off = transport?.onButton?.((event) => events.push(event));
+  try {
+    return events;
+  } finally {
+    off?.();
+  }
 }
 
 export async function runOnboardingGate({
