@@ -19,6 +19,8 @@ test("mock transport writes frame, loops buttons, and feeds fixed sensor data", 
   assert.deepEqual([...readFileSync(framePath)], [1, 2, 3]);
   assert.deepEqual(events, [{ key: "KEY", kind: "short" }]);
   assert.deepEqual(mock.feedSensor(), { t: 22.5, h: 51 });
+  assert.equal(typeof mock.sendVolume, "function");
+  assert.doesNotThrow(() => mock.sendVolume(20));
 
   off();
   mock.injectButton("KEY", "long");

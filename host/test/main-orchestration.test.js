@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { createButtonDispatcher, main, runOneTick, runTickLoop } from "../src/index.js";
 import { OAK_LINES } from "../src/pet/onboarding-data.js";
+import { SOUND } from "../src/transport/proto.js";
 
 const blocksJson = readFileSync(new URL("./fixtures/ccusage-blocks.json", import.meta.url), "utf8");
 const dailyJson = readFileSync(new URL("./fixtures/ccusage-daily.json", import.meta.url), "utf8");
@@ -31,7 +32,13 @@ test("runTickLoop runs the first tick, survives a throwing tick, and stops when 
   assert.equal(started, true); // beforeLoop ran after the first tick
 });
 
-function createBitmapMockTransport({ buttonsOnSubscribe = [], onPush = () => {}, onClose = () => {} } = {}) {
+function createBitmapMockTransport({
+  buttonsOnSubscribe = [],
+  onPush = () => {},
+  onClose = () => {},
+  onPlaySound = () => {},
+  onSendVolume = () => {},
+} = {}) {
   const emitter = new EventEmitter();
   return {
     onButton(callback) {
@@ -46,8 +53,9 @@ function createBitmapMockTransport({ buttonsOnSubscribe = [], onPush = () => {},
     feedSensor() {
       return { t: 23, h: 56 };
     },
-    playSound() {},
+    playSound(id) { onPlaySound(id); },
     setActiveCry() {},
+    sendVolume(volume) { onSendVolume(volume); },
     close() { onClose(); },
   };
 }
@@ -211,6 +219,105 @@ test("a button that arrived before the tick is buffered and drained into the tic
 
   const state = JSON.parse(readFileSync(statePath, "utf8"));
   assert.equal(state.careCount, 1); // buffered KEY-long was drained into runOneTick -> care recorded
+});
+
+test("main once-mode closes transport before resolving (RM13)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-main-rm13-state.json");
+  const framePath = join("out", "test-main-rm13-frame.png");
+  const configPath = join("out", "test-main-rm13-config.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+  writeState(statePath);
+  writeConfig(configPath);
+
+  let closed = false;
+  await main({
+    once: true,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    transport: createBitmapMockTransport({ onClose: () => { closed = true; } }),
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => (args.includes("daily") ? dailyJson : blocksJson),
+  });
+
+  assert.equal(closed, true);
+});
+
+test("quietHours gate host top-of-hour sounds across midnight (RM12)", async () => {
+  const muted = await runMainOnceWithClock({
+    suffix: "rm12-muted",
+    config: { quietHours: { start: 22, end: 8 }, volume: 70 },
+    times: [
+      new Date(2026, 0, 1, 1, 59),
+      new Date(2026, 0, 1, 2, 0),
+    ],
+  });
+  assert.deepEqual(muted.sounds, []);
+
+  const audible = await runMainOnceWithClock({
+    suffix: "rm12-audible",
+    config: { quietHours: { start: 23, end: 7 }, volume: 70 },
+    times: [
+      new Date(2026, 0, 1, 6, 59),
+      new Date(2026, 0, 1, 7, 1),
+    ],
+  });
+  assert.deepEqual(audible.sounds, [SOUND.HOUR]);
+});
+
+test("quiet boundary sends VOLUME 0 on entry and restores configured volume on exit (RM12)", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-main-rm12-volume-boundary-state.json");
+  const framePath = join("out", "test-main-rm12-volume-boundary-frame.png");
+  const configPath = join("out", "test-main-rm12-volume-boundary-config.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+  writeState(statePath);
+  writeConfig(configPath, { quietHours: { start: 22, end: 7 }, volume: 55 });
+
+  const volumes = [];
+  let pushes = 0;
+  const running = main({
+    once: false,
+    intervalMs: 0,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    nowProvider: sequenceClock([
+      new Date(2026, 0, 1, 21, 59),
+      new Date(2026, 0, 1, 22, 0),
+      new Date(2026, 0, 2, 7, 1),
+    ]),
+    transport: createBitmapMockTransport({
+      onSendVolume: (volume) => volumes.push(volume),
+      onPush: () => {
+        pushes += 1;
+        if (pushes >= 2) process.emit("SIGINT");
+      },
+    }),
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => (args.includes("daily") ? dailyJson : blocksJson),
+  });
+
+  const result = await Promise.race([
+    running.then(() => "settled"),
+    sleep(500).then(() => "timeout"),
+  ]);
+
+  assert.equal(result, "settled");
+  assert.deepEqual(volumes, [55, 0, 55]);
 });
 
 test("button emitted while runOneTick is active is routed to the next tick exactly once (RH3)", async () => {
@@ -434,6 +541,59 @@ function writeState(statePath, overrides = {}) {
       ...overrides,
     }),
   );
+}
+
+function writeConfig(configPath, overrides = {}) {
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      name: "阿布",
+      quietHours: { start: 22, end: 8 },
+      volume: 70,
+      lat: -36.8485,
+      lon: 174.7633,
+      ...overrides,
+    }),
+  );
+}
+
+async function runMainOnceWithClock({ suffix, config, times }) {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", `test-main-${suffix}-state.json`);
+  const framePath = join("out", `test-main-${suffix}-frame.png`);
+  const configPath = join("out", `test-main-${suffix}-config.json`);
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+  writeState(statePath);
+  writeConfig(configPath, config);
+
+  const sounds = [];
+  await main({
+    once: true,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    nowProvider: sequenceClock(times),
+    transport: createBitmapMockTransport({ onPlaySound: (id) => sounds.push(id) }),
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => (args.includes("daily") ? dailyJson : blocksJson),
+  });
+
+  return { sounds };
+}
+
+function sequenceClock(times) {
+  let index = 0;
+  return () => {
+    const value = times[Math.min(index, times.length - 1)];
+    index += 1;
+    return value;
+  };
 }
 
 function usageWithTokens(todayTokens) {

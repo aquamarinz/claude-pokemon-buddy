@@ -27,5 +27,7 @@ export function createMockTransport({
     feedSensor() {
       return { ...sensor };
     },
+
+    sendVolume() {},
   };
 }

@@ -4,6 +4,7 @@ export const T = {
   SOUND_LOAD: 0x02,
   PLAY: 0x03,
   CONFIG: 0x04,
+  VOLUME: 0x25,
   HELLO: 0x81,
   BUTTON: 0x82,
   SENSOR: 0x83,

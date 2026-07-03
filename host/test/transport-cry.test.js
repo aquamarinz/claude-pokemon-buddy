@@ -11,6 +11,7 @@ function fakeSerialFactory() {
     pushFrame: async () => ({ ok: true }),
     playSound() {},
     setActiveCry(id) { writes.push(["cry", id]); },
+    sendVolume(volume) { writes.push(["volume", volume]); },
     onReconnect(cb) { reconnectCb = cb; return () => {}; },
     onButton() { return () => {}; },
     onSensor() { return () => {}; },
@@ -41,8 +42,32 @@ test("setActiveCry is replayed after reconnect", async () => {
   assert.deepEqual(serial._writes.at(-1), ["cry", 9]); // 重放
 });
 
+test("sendVolume sends a VOLUME downlink through the serial wrapper (RM12)", async () => {
+  const fake = fakeSerialFactory();
+  const t = await createTransport({ serialTransportFactory: fake });
+  t.sendVolume(42);
+  const serial = await fake();
+  assert.deepEqual(serial._writes.at(-1), ["volume", 42]);
+});
+
+test("sendVolume is replayed after reconnect (RM12)", async () => {
+  const fake = fakeSerialFactory();
+  const serial = await fake();
+  const t = await createTransport({ serialTransportFactory: () => Promise.resolve(serial) });
+  t.sendVolume(55);
+  serial._writes.length = 0;
+  serial._fireReconnect();
+  assert.deepEqual(serial._writes.at(-1), ["volume", 55]);
+});
+
 test("mock transport exposes a no-op setActiveCry", async () => {
   const t = await createTransport({ serialTransportFactory: async () => null });
   assert.equal(typeof t.setActiveCry, "function");
   assert.doesNotThrow(() => t.setActiveCry(5));
+});
+
+test("mock transport exposes a no-op sendVolume (RM12)", async () => {
+  const t = await createTransport({ serialTransportFactory: async () => null });
+  assert.equal(typeof t.sendVolume, "function");
+  assert.doesNotThrow(() => t.sendVolume(5));
 });

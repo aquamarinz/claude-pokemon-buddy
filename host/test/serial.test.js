@@ -332,6 +332,16 @@ test("setActiveCry writes a CONFIG frame with the sound id", () => {
   assert.deepEqual([...frame.payload], [7]);
 });
 
+test("sendVolume writes a VOLUME frame with the configured volume (RM12)", () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port });
+  transport.sendVolume(70);
+  const frame = decodeFrame(port.writes.at(-1));
+  assert.equal(frame.type, T.VOLUME);
+  assert.equal(frame.seq, 0);
+  assert.deepEqual([...frame.payload], [70]);
+});
+
 test("playSound write error triggers reconnect (M8)", async () => {
   const port1 = new FakePort();
   const port2 = new FakePort();
@@ -361,6 +371,23 @@ test("setActiveCry write error triggers reconnect (M8)", async () => {
   });
 
   transport.setActiveCry(7);
+  await waitFor(() => attempts === 1);
+  assert.equal(attempts, 1);
+  transport.close();
+});
+
+test("sendVolume write error triggers reconnect with the same fire-and-forget guard (RM12)", async () => {
+  const port1 = new FakePort();
+  const port2 = new FakePort();
+  let attempts = 0;
+  port1.writeError = new Error("disconnected");
+  const transport = makeTransport({
+    port: port1,
+    openPort: async () => { attempts += 1; return port2; },
+    reconnectDelayMs: 5,
+  });
+
+  transport.sendVolume(70);
   await waitFor(() => attempts === 1);
   assert.equal(attempts, 1);
   transport.close();

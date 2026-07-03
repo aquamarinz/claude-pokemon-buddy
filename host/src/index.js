@@ -266,12 +266,21 @@ export async function main({
   weatherClient: injectedWeatherClient,
   pollUsage = pollUsageOnce,
   logger = console,
+  nowProvider = () => new Date(),
 } = {}) {
   let config = loadConfig(configPath);
   const transport = injectedTransport ?? await createTransport({ framePath });
+  const initialNow = nowProvider();
+  let soundNow = initialNow;
+  const hostTransport = withSoundGate(transport, () => config, () => soundNow);
+  let lastQuietActive = isQuietNow(config, initialNow);
+  const sendEffectiveVolume = (now) => {
+    transport.sendVolume?.(effectiveVolume(config, now));
+  };
+  sendEffectiveVolume(initialNow);
   let currentModel = null;
   const animator = createBuddyAnimator({
-    transport,
+    transport: hostTransport,
     getModel: () => currentModel,
     render: renderFrame,
   });
@@ -279,7 +288,7 @@ export async function main({
   await runOnboardingGate({
     statePath,
     onboarding: async () => {
-      const { io, off } = makeOnboardingIo(transport);
+      const { io, off } = makeOnboardingIo(hostTransport);
       try { return await runOnboarding(io); } finally { off?.(); }
     },
   });
@@ -294,7 +303,7 @@ export async function main({
   const actions = createActionQueue();
   const evolutionIntents = createEvolutionIntentQueue();
   const buttonDispatcher = createButtonDispatcher({
-    transport,
+    transport: hostTransport,
     getPet: () => runtime.pet,
     getModel: () => currentModel,
     actions,
@@ -311,6 +320,13 @@ export async function main({
         getRuntime: () => runtime,
         getConfig: () => config,
         setConfig: (next) => { config = next; },
+        onSettingsChanged: (changed) => {
+          if (!("volume" in changed) && !("quietHours" in changed)) return;
+          const now = nowProvider();
+          soundNow = now;
+          lastQuietActive = isQuietNow(config, now);
+          sendEffectiveVolume(now);
+        },
         evolutionIntents,
       })
     : null;
@@ -330,9 +346,16 @@ export async function main({
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  let lastHour = new Date().getHours();
+  let lastHour = initialNow.getHours();
   async function tick() {
     await actions.run(async () => {
+      const now = nowProvider();
+      soundNow = now;
+      const quietActive = isQuietNow(config, now);
+      if (quietActive !== lastQuietActive) {
+        lastQuietActive = quietActive;
+        sendEffectiveVolume(now);
+      }
       animator.pause();
       try {
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
@@ -350,7 +373,7 @@ export async function main({
         });
         const usage = mergeUsage(selected.usage, loadRateLimits());
         const weather = await loadWeatherSnapshot(weatherClient, config);
-        const room = transport.feedSensor();
+        const room = hostTransport.feedSensor();
         const pendingButtons = buttonDispatcher.drainTickEvents();
         let pet;
         try {
@@ -360,7 +383,9 @@ export async function main({
             room,
             statePath,
             framePath,
-            transport,
+            transport: hostTransport,
+            now,
+            today: localYmd(now),
             onRenderModel: (model) => { currentModel = model; },
             pendingButtons,
             evolutionIntents,
@@ -370,10 +395,10 @@ export async function main({
           throw error;
         }
         runtime = { usage, weather, room, pet };
-        const hour = new Date().getHours();
+        const hour = now.getHours();
         if (hour !== lastHour) {
           lastHour = hour;
-          transport.playSound?.(SOUND.HOUR);           // top-of-hour chime
+          hostTransport.playSound?.(SOUND.HOUR);       // top-of-hour chime
         }
         console.log(`wrote ${framePath}`);
       } finally {
@@ -382,25 +407,31 @@ export async function main({
     });
   }
 
-  if (once) {
-    await tick(); // once mode: let errors propagate to the exit code
-    return;
-  }
+  try {
+    if (once) {
+      await tick(); // once mode: let errors propagate to the exit code
+      return;
+    }
 
-  await runTickLoop({
-    runTick: tick,
-    intervalMs,
-    isStopped: () => stopped,
-    beforeLoop: () => animator.start(),
-    setTimer: (resolve, ms) => {
-      resolveLoopSleep = () => {
-        timer = null;
-        resolveLoopSleep = null;
-        resolve();
-      };
-      timer = setTimeout(resolveLoopSleep, ms);
-    },
-  });
+    await runTickLoop({
+      runTick: tick,
+      intervalMs,
+      isStopped: () => stopped,
+      beforeLoop: () => animator.start(),
+      setTimer: (resolve, ms) => {
+        resolveLoopSleep = () => {
+          timer = null;
+          resolveLoopSleep = null;
+          resolve();
+        };
+        timer = setTimeout(resolveLoopSleep, ms);
+      },
+    });
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    if (once && !stopped) stop();
+  }
 }
 
 export async function runTickLoop({
@@ -436,6 +467,7 @@ export function startDashboardServer({
   getRuntime = () => ({}),
   getConfig = () => loadConfig(configPath),
   setConfig = () => {},
+  onSettingsChanged = () => {},
   evolutionIntents = createEvolutionIntentQueue(),
 } = {}) {
   return startWebServer({
@@ -466,6 +498,7 @@ export function startDashboardServer({
       const next = { ...getConfig(), ...result.value };
       setConfig(next);
       saveConfig(configPath, next);
+      onSettingsChanged(result.value, next);
       return result.value;
     },
     chooseEvolution: (to) => {
@@ -535,6 +568,15 @@ function makeOnboardingIo(transport) {
     delay: (ms) => new Promise((res) => setTimeout(res, ms)),
   };
   return { io, off };
+}
+
+function withSoundGate(transport, getConfig, getNow) {
+  return {
+    ...transport,
+    playSound(id) {
+      if (!isQuietNow(getConfig(), getNow())) transport.playSound?.(id);
+    },
+  };
 }
 
 export function ensurePet(state, today, personalityRng = Math.random) {
@@ -730,6 +772,28 @@ function localYmd(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function isQuietNow(config, now) {
+  const quietHours = config?.quietHours;
+  if (!quietHours) return false;
+  const { start, end } = quietHours;
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return false;
+  if (start < 0 || start > 23 || end < 0 || end > 23 || start === end) return false;
+  const hour = now.getHours();
+  return start < end
+    ? hour >= start && hour < end
+    : hour >= start || hour < end;
+}
+
+function effectiveVolume(config, now) {
+  return isQuietNow(config, now) ? 0 : volumeByte(config?.volume);
+}
+
+function volumeByte(value) {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(volume)));
 }
 
 const isCli = process.argv[1] && existsSync(process.argv[1])

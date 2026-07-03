@@ -134,6 +134,41 @@ test("dashboard reads and writes config through main()'s in-memory closures (M5)
   }
 });
 
+test("dashboard settings volume change can trigger a VOLUME downlink (RM12)", async () => {
+  const configPath = join("out", "test-rm12-settings-volume-config.json");
+  const statePath = join("out", "test-rm12-settings-volume-state.json");
+  const framePath = join("out", "test-rm12-settings-volume-frame.png");
+  rmSync(configPath, { force: true });
+  rmSync(statePath, { force: true });
+
+  let config = { name: "old", quietHours: { start: 22, end: 8 }, volume: 50, lat: 1, lon: 2 };
+  const volumes = [];
+  const handle = await startDashboardServer({
+    port: 0,
+    statePath,
+    configPath,
+    framePath,
+    getRuntime: () => ({}),
+    getConfig: () => config,
+    setConfig: (next) => { config = next; },
+    onSettingsChanged: (changed, next) => {
+      if ("volume" in changed) volumes.push(next.volume);
+    },
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ volume: 33 }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(volumes, [33]);
+  } finally {
+    await handle.close();
+  }
+});
+
 test("dashboard rejects invalid evolution choices without writing state", async () => {
   const id = randomUUID();
   const statePath = join("out", `test-dashboard-choice-state-${id}.json`);

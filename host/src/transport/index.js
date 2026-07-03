@@ -40,6 +40,7 @@ function wrapMockTransport(mock) {
     ...mock,
     kind: "mock",
     setActiveCry() {},
+    sendVolume(volume) { mock.sendVolume?.(volume); },
     async push(frame) {
       return mock.push(frame?.pngBuffer ?? frame);
     },
@@ -56,9 +57,11 @@ function logMockFallback(logger) {
 function wrapSerialTransport(serial, { framePath }) {
   let previousBytes = null;
   let lastActiveCry = null;
+  let lastVolume = null;
   serial.onReconnect?.(() => {
     previousBytes = null;
     if (lastActiveCry != null) serial.setActiveCry(lastActiveCry); // P2: 重连重放
+    if (lastVolume != null) serial.sendVolume(lastVolume);
   });
 
   async function doPush({ pngBuffer, bitmap }) {
@@ -85,6 +88,10 @@ function wrapSerialTransport(serial, { framePath }) {
       lastActiveCry = id & 0xff;
       serial.setActiveCry(lastActiveCry);
     },
+    sendVolume(volume) {
+      lastVolume = volumeByte(volume);
+      serial.sendVolume?.(lastVolume);
+    },
     push,
   };
 }
@@ -93,4 +100,10 @@ function writePreview(framePath, pngBuffer) {
   if (!framePath || !pngBuffer) return;
   mkdirSync(dirname(framePath), { recursive: true });
   writeFileSync(framePath, pngBuffer);
+}
+
+function volumeByte(value) {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(volume)));
 }

@@ -285,34 +285,32 @@ export function makeTransport({
     };
   }
 
+  function writeFireAndForget(type, payload) {
+    if (!connected) return;
+    const writePort = currentPort;
+    try {
+      writePort.write(
+        encodeFrame({ type, seq: 0, payload }),
+        (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
+      );
+    } catch {
+      if (writePort === currentPort && connected) handleDisconnect();
+    }
+  }
+
   return {
     pushFrame,
     playSound(soundId) {
-      if (!connected) return;
       // Fire-and-forget: device doesn't ACK PLAY. Surface an async write error to the
       // reconnect path, but only if it's still THIS port (a stale callback from an old
       // port must not tear down a reconnected session).
-      const writePort = currentPort;
-      try {
-        writePort.write(
-          encodeFrame({ type: T.PLAY, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
-        );
-      } catch {
-        handleDisconnect();
-      }
+      writeFireAndForget(T.PLAY, Uint8Array.from([soundId & 0xff]));
     },
     setActiveCry(soundId) {
-      if (!connected) return;
-      const writePort = currentPort;
-      try {
-        writePort.write(
-          encodeFrame({ type: T.CONFIG, seq: 0, payload: Uint8Array.from([soundId & 0xff]) }),
-          (error) => { if (error && writePort === currentPort && connected) handleDisconnect(); },
-        );
-      } catch {
-        handleDisconnect();
-      }
+      writeFireAndForget(T.CONFIG, Uint8Array.from([soundId & 0xff]));
+    },
+    sendVolume(volume) {
+      writeFireAndForget(T.VOLUME, Uint8Array.from([volumeByte(volume)]));
     },
     onReconnect(callback) {
       events.on("reconnect", callback);
@@ -383,4 +381,10 @@ function parseSensor(payload) {
     t: view.getInt16(0, true) / 10,
     h: payload[2],
   };
+}
+
+function volumeByte(value) {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(volume)));
 }
