@@ -286,6 +286,141 @@ test("dashboard rejects invalid evolution choices without writing state", async 
   }
 });
 
+test("dashboard returns 202 for queued choice but next tick revalidates before evolving", async () => {
+  const id = randomUUID();
+  const statePath = join("out", `test-dashboard-choice-lapse-state-${id}.json`);
+  const configPath = join("out", `test-dashboard-choice-lapse-config-${id}.json`);
+  const framePath = join("out", `test-dashboard-choice-lapse-frame-${id}.png`);
+  mkdirSync(dirname(statePath), { recursive: true });
+  const seed = {
+    schemaVersion: 1,
+    hatched: true,
+    species: "eevee",
+    level: 1,
+    exp: 0,
+    bond: 160,
+    streak: 0,
+    shield: 0,
+    lastSettled: "2026-05-30",
+    lastGrowthDay: "2026-05-30",
+    todayCreditedExp: 0,
+    todayCreditedBond: 0,
+    readyToEvolve: true,
+    pendingCandidates: [
+      { to: "espeon", needs: { bond: 56, daytime: true }, priority: 2 },
+      { to: "leafeon", needs: { bond: 56, warmHumid: true }, priority: 3 },
+    ],
+  };
+  writeFileSync(statePath, JSON.stringify(seed));
+  writeFileSync(configPath, JSON.stringify({ name: "阿布" }));
+  const evolutionIntents = intentQueue();
+  const handle = await startDashboardServer({
+    port: 0,
+    statePath,
+    configPath,
+    framePath,
+    getRuntime: () => ({
+      pet: seed,
+      weather: { cond: "多云", temp: 24, humidity: 70 },
+      room: { t: 24, h: 70 },
+    }),
+    nowProvider: () => new Date(2026, 4, 30, 10),
+    evolutionIntents,
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/api/evolution/choose`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to: "leafeon" }),
+    });
+
+    assert.equal(res.status, 202);
+
+    const state = await runOneTick({
+      usage: {
+        p5h: 12,
+        pweek: 34,
+        todayCost: 1,
+        todayTokens: 0,
+        modelled: true,
+        weekTokens: 0,
+      },
+      weather: { cond: "多云", temp: 12, feels: 12, hi: 14, lo: 10, precip: 30, wind: 11, humidity: 50 },
+      statePath,
+      framePath,
+      mock: { push: async () => ({ ok: true }), feedSensor: () => ({ t: 21, h: 45 }), setActiveCry() {} },
+      evolutionIntents,
+      today: "2026-05-30",
+      now: new Date(2026, 4, 30, 10),
+      evolutionDelay: async () => {},
+    });
+
+    assert.equal(state.species, "eevee");
+    assert.equal(state.pendingCandidates, undefined);
+  } finally {
+    await handle.close();
+    rmSync(statePath, { force: true });
+    rmSync(`${statePath}.bak`, { force: true });
+    rmSync(configPath, { force: true });
+    rmSync(`${configPath}.bak`, { force: true });
+    rmSync(framePath, { force: true });
+  }
+});
+
+test("dashboard rejects evolution stones without a matching current-species branch", async () => {
+  const id = randomUUID();
+  const statePath = join("out", `test-dashboard-stone-invalid-state-${id}.json`);
+  const configPath = join("out", `test-dashboard-stone-invalid-config-${id}.json`);
+  const framePath = join("out", `test-dashboard-stone-invalid-frame-${id}.png`);
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(
+    statePath,
+    JSON.stringify({
+      schemaVersion: 1,
+      hatched: true,
+      species: "bulbasaur",
+      level: 1,
+      exp: 0,
+      bond: 0,
+      streak: 0,
+      shield: 0,
+      lastSettled: "2026-05-30",
+      lastGrowthDay: "2026-05-30",
+      todayCreditedExp: 0,
+      todayCreditedBond: 0,
+      readyToEvolve: false,
+    }),
+  );
+  writeFileSync(configPath, JSON.stringify({ name: "阿布" }));
+  const evolutionIntents = intentQueue();
+  const handle = await startDashboardServer({
+    port: 0,
+    statePath,
+    configPath,
+    framePath,
+    getRuntime: () => ({}),
+    evolutionIntents,
+  });
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/api/evolution/stone`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ stone: "fire" }),
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(evolutionIntents.drain(), []);
+  } finally {
+    await handle.close();
+    rmSync(statePath, { force: true });
+    rmSync(`${statePath}.bak`, { force: true });
+    rmSync(configPath, { force: true });
+    rmSync(`${configPath}.bak`, { force: true });
+  }
+});
+
 test("dashboard stone intent is consumed by next KEY tick and clears after evolution", async () => {
   const id = randomUUID();
   const statePath = join("out", `test-dashboard-stone-state-${id}.json`);
@@ -327,7 +462,7 @@ test("dashboard stone intent is consumed by next KEY tick and clears after evolu
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ stone: "thunder" }),
     });
-    assert.equal(res.status, 200);
+    assert.equal(res.status, 202);
 
     const state = await runOneTick({
       usage: {

@@ -5,10 +5,11 @@ import { fileURLToPath } from "node:url";
 import { cryAudioId } from "./pet/cry-audio.js";
 import { cryFor } from "./pet/cries.js";
 import { loadConfig, saveConfig } from "./config.js";
+import { resolveEvolution } from "./pet/evolution.js";
 import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { buildUsedDays, settleDays } from "./pet/settlement.js";
-import { applyPetTransitions, drainEvolutionIntents, ensurePet } from "./pet/transitions.js";
+import { applyPetTransitions, drainEvolutionIntents, ensurePet, evolutionContext } from "./pet/transitions.js";
 import { runOnboarding } from "./pet/onboarding.js";
 import { createBuddyAnimator } from "./render/buddy-animator.js";
 import { playEvolutionAnimation } from "./render/evolution-anim.js";
@@ -301,6 +302,7 @@ export async function main({
           sendEffectiveVolume(now);
         },
         evolutionIntents,
+        nowProvider,
       })
     : null;
 
@@ -442,6 +444,7 @@ export function startDashboardServer({
   setConfig = () => {},
   onSettingsChanged = () => {},
   evolutionIntents = createEvolutionIntentQueue(),
+  nowProvider = () => new Date(),
 } = {}) {
   return startWebServer({
     host,
@@ -470,18 +473,47 @@ export function startDashboardServer({
       return result.value;
     },
     chooseEvolution: (to) => {
-      const runtime = getRuntime();
-      const pet = runtime.pet ?? loadState(statePath);
-      const pending = Array.isArray(pet.pendingCandidates) ? pet.pendingCandidates : [];
-      if (!pending.some((candidate) => candidate?.to === to)) {
-        throw new Error("evolution candidate is not pending");
+      const { evolution } = resolveCurrentEvolution({
+        runtime: getRuntime(),
+        statePath,
+        nowProvider,
+      });
+      const hasChoicePrompt = !evolution.auto && evolution.candidates.length > 1;
+      if (!hasChoicePrompt || !evolution.candidates.some((candidate) => candidate?.to === to)) {
+        throw new Error("evolution candidate is not currently eligible");
       }
       evolutionIntents.push({ type: "choose", to });
+      return { to };
     },
     grantEvolutionStone: (stone) => {
+      const { evolution } = resolveCurrentEvolution({
+        runtime: getRuntime(),
+        statePath,
+        nowProvider,
+        stone,
+      });
+      const branch = evolution.candidates.find((candidate) => candidate?.needs?.stone === stone);
+      if (!branch) throw new Error("evolution stone does not match current species");
       evolutionIntents.push({ type: "stone", stone });
+      return { stone, to: branch.to };
     },
   });
+}
+
+function resolveCurrentEvolution({ runtime = {}, statePath, nowProvider, stone } = {}) {
+  const pet = runtime.pet ?? loadState(statePath);
+  const probePet = stone ? { ...pet, stone } : pet;
+  const now = nowProvider();
+  const evolution = resolveEvolution(
+    probePet.species,
+    evolutionContext({
+      pet: probePet,
+      weather: runtime.weather ?? DEFAULT_WEATHER,
+      room: runtime.room,
+      now,
+    }),
+  );
+  return { pet: probePet, evolution };
 }
 
 function adaptPngTransport(transport) {

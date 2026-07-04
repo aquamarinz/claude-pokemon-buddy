@@ -72,17 +72,22 @@ export function applyPetTransitions({
   const evolution = choiceEvolved
     ? { auto: null, candidates: [] }
     : resolveEvolution(next.species, evolutionContext({ pet: next, weather, room, now }));
-  const readyToEvolve = Boolean(evolution.auto || evolution.candidates.length > 0);
-  next = { ...next, readyToEvolve };
+  if (!choiceEvolved && next.stone && !hasMatchingStoneCandidate(evolution.candidates, next.stone)) {
+    const { stone, ...withoutStone } = next;
+    next = withoutStone;
+  }
+  const reconciledEvolution = choiceEvolved
+    ? evolution
+    : resolveEvolution(next.species, evolutionContext({ pet: next, weather, room, now }));
+  const readyToEvolve = Boolean(reconciledEvolution.auto || reconciledEvolution.candidates.length > 0);
+  next = reconcilePendingCandidates({ ...next, readyToEvolve }, reconciledEvolution);
 
   if (!choiceEvolved && readyToEvolve && hasKeyPress(buttonEvents)) {
-    if (evolution.auto) {
+    if (reconciledEvolution.auto) {
       const fromSpecies = next.species;
-      const toSpecies = evolution.auto;
+      const toSpecies = reconciledEvolution.auto;
       next = evolvePet(next, toSpecies);
       evolutionAnimation = { fromSpecies, toSpecies };
-    } else if (evolution.candidates.length > 0) {
-      next = { ...next, pendingCandidates: evolution.candidates };
     }
   }
 
@@ -143,6 +148,18 @@ function hasPersonality(pet) {
 
 function hasKeyPress(events) {
   return events.some((event) => event?.key === "KEY" && event?.kind === "short");
+}
+
+function reconcilePendingCandidates(pet, evolution) {
+  const { pendingCandidates, ...withoutPendingCandidates } = pet;
+  if (!evolution.auto && evolution.candidates.length > 1) {
+    return { ...withoutPendingCandidates, pendingCandidates: evolution.candidates };
+  }
+  return withoutPendingCandidates;
+}
+
+function hasMatchingStoneCandidate(candidates, stone) {
+  return candidates.some((candidate) => candidate?.needs?.stone === stone);
 }
 
 function isEvolutionStone(stone) {

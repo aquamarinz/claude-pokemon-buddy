@@ -105,7 +105,45 @@ test("renderSettings leaves the active input alone when updating settings fields
   assert.equal(elements.get("volume-value").textContent, "44");
 });
 
-async function loadApp({ posted = [] } = {}) {
+test("dashboard app hides choose buttons unless next evolution is ready", async () => {
+  const { context, elements } = await loadApp({ withGoal: true });
+
+  context.renderBuddy({
+    species: "bulbasaur",
+    iv: [],
+    badges: [],
+    nextEvo: {
+      ready: false,
+      pendingCandidates: [{ to: "ivysaur", priority: 1 }],
+    },
+  }, "NORMAL");
+
+  assert.equal(elements.get("evolution-controls").hidden, true);
+  assert.equal(elements.get("evolution-controls").children.length, 0);
+});
+
+test("dashboard app treats accepted evolution intents as queued until state changes", async () => {
+  const calls = [];
+  const { context, elements } = await loadApp({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      if (url === "/api/evolution/choose") {
+        return { ok: true, status: 202, json: async () => ({ ok: true, queued: true, to: "leafeon" }) };
+      }
+      return { ok: true, status: 200, json: async () => defaultView() };
+    },
+  });
+  context.renderBuddy({ species: "eevee", iv: [], badges: [], nextEvo: {} }, "NORMAL");
+  const stateCallsBefore = calls.filter((call) => call.url === "/api/state").length;
+
+  await context.postEvolutionIntent("/api/evolution/choose", { to: "leafeon" });
+  await flush();
+
+  assert.equal(elements.get("settings-status").textContent, "已排队");
+  assert.equal(calls.filter((call) => call.url === "/api/state").length, stateCallsBefore);
+});
+
+async function loadApp({ posted = [], withGoal = false, fetchImpl } = {}) {
   const elements = new Map();
   const document = {
     activeElement: null,
@@ -116,19 +154,20 @@ async function loadApp({ posted = [] } = {}) {
     createElement(tag) {
       return makeElement("", tag);
     },
-    querySelector() {
+    querySelector(selector) {
+      if (selector === ".goal" && withGoal) return this.getElementById("goal");
       return null;
     },
   };
   const context = {
     document,
-    fetch: async (url, options = {}) => {
+    fetch: fetchImpl ?? (async (url, options = {}) => {
       if (url === "/api/settings") {
         posted.push(JSON.parse(options.body));
         return { ok: true, json: async () => ({ ok: true }) };
       }
       return { ok: true, json: async () => defaultView() };
-    },
+    }),
     setInterval() {},
     Date,
   };
