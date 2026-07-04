@@ -83,7 +83,18 @@ test("loadUsageSnapshot fail-closes when ccusage command fails", async () => {
     },
   });
 
-  assert.deepEqual(snapshot, { ok: false });
+  assert.deepEqual(snapshot, { ok: false, reason: "ccusage unavailable" });
+});
+
+test("loadUsageSnapshot includes schema drift failure reason", async () => {
+  const snapshot = await loadUsageSnapshot({
+    run: async () => {
+      throw new Error("schema drift");
+    },
+  });
+
+  assert.equal(snapshot.ok, false);
+  assert.equal(snapshot.reason, "schema drift");
 });
 
 test("usageForDisplay keeps last-known usage stale instead of using fake defaults", () => {

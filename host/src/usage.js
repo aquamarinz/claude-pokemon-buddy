@@ -10,8 +10,8 @@ export async function loadUsageSnapshot({ run = runCcusage, today = localYmd(new
       ok: true,
       ...normalizeUsage({ blocksJson, dailyJson, today }),
     };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, reason: errorReason(error) };
   }
 }
 
@@ -140,6 +140,10 @@ function numberField(value, label) {
 function stringField(value, label) {
   if (typeof value === "string" && value.length > 0) return value;
   throw new Error(`expected string: ${label}`);
+}
+
+function errorReason(error) {
+  return error?.message ? error.message : "error";
 }
 
 function localYmd(date) {

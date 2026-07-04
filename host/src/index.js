@@ -257,6 +257,7 @@ export async function main({
     transport: hostTransport,
     getModel: () => currentModel,
     render: renderFrame,
+    logger,
   });
 
   await runOnboardingGate({
@@ -273,6 +274,7 @@ export async function main({
   let timer = null;
   let resolveLoopSleep = null;
   let runtime = {};
+  let lastLoadUsageFailureReason = null;
   let lastPollUsageFailureReason = null;
   const actions = createActionQueue();
   const evolutionIntents = createEvolutionIntentQueue();
@@ -334,6 +336,12 @@ export async function main({
       animator.pause();
       try {
         const snapshot = await loadUsageSnapshot({ ...config, run: usageRun });
+        lastLoadUsageFailureReason = logFailureReasonTransition({
+          result: snapshot,
+          lastReason: lastLoadUsageFailureReason,
+          logger,
+          label: "loadUsageSnapshot",
+        });
         const selected = usageForDisplay(snapshot, lastKnownUsage);
         lastKnownUsage = selected.lastKnown;
         const pollResult = await pollUsage().catch((error) => ({
