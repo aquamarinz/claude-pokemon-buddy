@@ -10,20 +10,33 @@ export function loadRateLimits({ path = USAGE_PATH, now = Date.now() } = {}) {
   try {
     data = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return { p5h: null, pweek: null, resets5h: null, resetsWeek: null, official: false, stale: true };
+    return staleAllNull();
   }
-  const writtenAt = Number(data.writtenAt);
-  const stale = !Number.isFinite(writtenAt) || Math.floor(now / 1000) - writtenAt > STALE_SEC;
-  const p5h = numOrNull(data.fiveHourPct);
-  const pweek = numOrNull(data.weeklyPct);
-  return {
-    p5h,
-    pweek,
-    resets5h: epochToIso(data.fiveHourReset),
-    resetsWeek: epochToIso(data.weeklyReset),
-    official: p5h != null || pweek != null,
-    stale,
-  };
+  if (!isPlainObject(data)) return staleAllNull();
+  try {
+    const writtenAt = Number(data.writtenAt);
+    const stale = !Number.isFinite(writtenAt) || Math.floor(now / 1000) - writtenAt > STALE_SEC;
+    const p5h = numOrNull(data.fiveHourPct);
+    const pweek = numOrNull(data.weeklyPct);
+    return {
+      p5h,
+      pweek,
+      resets5h: epochToIso(data.fiveHourReset),
+      resetsWeek: epochToIso(data.weeklyReset),
+      official: p5h != null || pweek != null,
+      stale,
+    };
+  } catch {
+    return staleAllNull();
+  }
+}
+
+function staleAllNull() {
+  return { p5h: null, pweek: null, resets5h: null, resetsWeek: null, official: false, stale: true };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function numOrNull(v) {
@@ -31,5 +44,5 @@ function numOrNull(v) {
 }
 
 function epochToIso(sec) {
-  return typeof sec === "number" && Number.isFinite(sec) ? new Date(sec * 1000).toISOString() : null;
+  return Number.isFinite(sec) && Math.abs(sec) < 8.64e12 ? new Date(sec * 1000).toISOString() : null;
 }

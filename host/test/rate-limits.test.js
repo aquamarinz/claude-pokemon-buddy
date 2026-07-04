@@ -15,6 +15,7 @@ function fixture(obj) {
 
 const NOW = 1_750_000_000_000; // 固定基准（ms）
 const NOW_SEC = Math.floor(NOW / 1000);
+const STALE_ALL_NULL = { p5h: null, pweek: null, resets5h: null, resetsWeek: null, official: false, stale: true };
 
 test("parses official 5h/week percent and converts epoch reset to ISO", () => {
   const path = fixture({
@@ -51,4 +52,33 @@ test("written over 15min ago → stale=true", () => {
   const path = fixture({ fiveHourPct: 9, writtenAt: NOW_SEC - 16 * 60 });
   const rl = loadRateLimits({ path, now: NOW });
   assert.equal(rl.stale, true);
+});
+
+test("out-of-range fiveHourReset returns null reset without throwing", () => {
+  const path = fixture({ fiveHourReset: 1e18, writtenAt: NOW_SEC });
+  let rl;
+  assert.doesNotThrow(() => {
+    rl = loadRateLimits({ path, now: NOW });
+  });
+  assert.equal(rl.resets5h, null);
+});
+
+test("poisoned non-object usage payload returns stale all-null shape without throwing", () => {
+  for (const payload of [null, 5, "x", []]) {
+    const path = fixture(payload);
+    let rl;
+    assert.doesNotThrow(() => {
+      rl = loadRateLimits({ path, now: NOW });
+    });
+    assert.deepEqual(rl, STALE_ALL_NULL);
+  }
+});
+
+test("millisecond-sized reset epoch returns null reset without throwing", () => {
+  const path = fixture({ fiveHourReset: 8_640_000_000_001, writtenAt: NOW_SEC });
+  let rl;
+  assert.doesNotThrow(() => {
+    rl = loadRateLimits({ path, now: NOW });
+  });
+  assert.equal(rl.resets5h, null);
 });
