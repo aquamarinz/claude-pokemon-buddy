@@ -89,15 +89,20 @@ function normalizeWeather(json) {
     temp: rounded(current.temperature_2m),
     feels: rounded(current.apparent_temperature),
     humidity: rounded(current.relative_humidity_2m),
-    hi: rounded(daily.temperature_2m_max[0]),
-    lo: rounded(daily.temperature_2m_min[0]),
-    precip: rounded(daily.precipitation_probability_max[0]),
+    hi: rounded(firstDailyValue(daily, "temperature_2m_max")),
+    lo: rounded(firstDailyValue(daily, "temperature_2m_min")),
+    precip: rounded(firstDailyValue(daily, "precipitation_probability_max")),
     wind: rounded(current.wind_speed_10m),
   };
 }
 
+function firstDailyValue(daily, key) {
+  const values = daily?.[key];
+  if (!Array.isArray(values) || values.length === 0) throw new Error("weather number missing");
+  return values[0];
+}
+
 function rounded(value) {
-  const n = Math.round(value);
-  if (!Number.isFinite(n)) throw new Error("weather number missing");
-  return n;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("weather number missing");
+  return Math.round(value);
 }
