@@ -107,6 +107,38 @@ test("settlementWindow lists capped, exclusive days between lastSettled and toda
   assert.deepEqual(settlementWindow(null, "2026-05-31"), []);
 });
 
+test("settlementWindow only materializes the trailing catch-up window for ancient dates", () => {
+  const RealDate = Date;
+  let constructed = 0;
+  globalThis.Date = class CountingDate extends RealDate {
+    constructor(...args) {
+      constructed += 1;
+      if (constructed > 40) throw new Error("settlementWindow constructed too many dates");
+      super(...args);
+    }
+
+    static now() {
+      return RealDate.now();
+    }
+
+    static parse(value) {
+      return RealDate.parse(value);
+    }
+
+    static UTC(...args) {
+      return RealDate.UTC(...args);
+    }
+  };
+
+  try {
+    const days = settlementWindow("0001-01-01", "2026-07-05", 30);
+    assert.equal(days.length, 30);
+    assert.ok(constructed <= 40);
+  } finally {
+    globalThis.Date = RealDate;
+  }
+});
+
 test("activeDaysFromUsage returns null when history is unavailable", () => {
   assert.equal(activeDaysFromUsage(undefined), null);
   assert.equal(activeDaysFromUsage({ ok: false }), null);
