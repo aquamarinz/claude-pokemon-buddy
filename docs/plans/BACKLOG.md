@@ -11,7 +11,8 @@
 
 > P0 已落地并过门禁：AR4/AR1/AR2/AR3/AR5/AR6（commit cccaab1/db3c8c1/e932509/1610b48/cf6815a/71272b9）。以下为本轮明确不含、另立的项。
 
-### PRE-1（**已证实 → 建议升级为修复项**，Medium）ccusage 默认 UTC 分桶 vs host 本地日历
+### PRE-1（**已修复** — AR8，commit `2a3bffd`，Medium）ccusage 默认 UTC 分桶 vs host 本地日历
+> 状态：已落地。`usage.js` 现经 `CCUSAGE_TIMEZONE` env 把 ccusage 分桶对齐 host 本地 IANA 时区（`2026-07-05-ar8-ccusage-timezone-spec.md`），门禁 367/0。以下为原始记录。
 - **结论**：调查证实 ccusage `daily`/`blocks` 的 `period` **默认按 UTC 分桶**（Claude JSONL 时间戳带 `Z`，ccusage 默认用 UTC 组件提取日期；参见 ryoppippi/ccusage issue #349「时区≠UTC 时分组错误」、#778「statusline today 因 UTC 显示 \$0」）。ccusage 提供 `--timezone <tz>` / `CCUSAGE_TIMEZONE` 覆盖，但**默认 UTC**。
 - **缺陷**：`host/src/usage.js:7-8` 调 `npx --yes ccusage blocks/daily --json` **未传 `--timezone`**，而 `today = localYmd(now)`（`usage.js:145-150`）为**本地**。对非 UTC 用户（默认配置 Auckland UTC+12/+13）：跨日边界的 `todayTokens`（`latestIsToday = todayPeriod === today` 失配 → 成长少记/记错日，影响 `applyDailyGrowth`）与 `activeDays`（UTC 桶 vs 本地结算窗口失配 → `streak`/`bond`/`shield` 衰减错误）会 off-by-one。
 - **注**：审计对抗验证曾以"两侧均本地"误驳此项（R6/R9/R10）；两模型均正确标注 Needs More Context。本调查推翻误驳、证实缺陷。`daysBetween` 本身仍正确（DST 安全）——问题在 ccusage 分桶时区，非 `daysBetween`。
