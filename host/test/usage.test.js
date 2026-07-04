@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadUsageSnapshot, normalizeUsage, usageForDisplay } from "../src/usage.js";
+import { loadUsageSnapshot, normalizeUsage, usageForDisplay, hostTimeZone, ccusageEnv, runCcusage } from "../src/usage.js";
 
 const blocksJson = readFileSync(
   new URL("./fixtures/ccusage-blocks.json", import.meta.url),
@@ -118,4 +118,66 @@ test("usageForDisplay keeps last-known usage stale instead of using fake default
   assert.equal(usage.stale, true);
   assert.equal(usage.degraded, true);
   assert.notEqual(usage.todayTokens, 5_300_000);
+});
+
+// AR8 / PRE-1: align ccusage bucketing to the host local timezone.
+
+test("loadUsageSnapshot forwards timeZone to both ccusage runs", async () => {
+  const calls = [];
+  const run = async (cmd, args, opts) => {
+    calls.push({ args, opts });
+    return args.includes("blocks") ? blocksJson : dailyJson;
+  };
+  await loadUsageSnapshot({ run, today: fixtureToday, timeZone: "Pacific/Auckland" });
+
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].args.includes("blocks"));
+  assert.deepEqual(calls[0].opts, { timeZone: "Pacific/Auckland" });
+  assert.ok(calls[1].args.includes("daily"));
+  assert.deepEqual(calls[1].opts, { timeZone: "Pacific/Auckland" });
+});
+
+test("loadUsageSnapshot defaults timeZone to the host IANA zone", async () => {
+  let seenTz;
+  const run = async (cmd, args, opts) => {
+    seenTz = opts?.timeZone;
+    return args.includes("blocks") ? blocksJson : dailyJson;
+  };
+  await loadUsageSnapshot({ run, today: fixtureToday });
+
+  assert.equal(seenTz, hostTimeZone());
+});
+
+test("ccusageEnv sets CCUSAGE_TIMEZONE only when a zone is provided", () => {
+  const base = { PATH: "/usr/bin" };
+
+  const withTz = ccusageEnv("Pacific/Auckland", base);
+  assert.equal(withTz.CCUSAGE_TIMEZONE, "Pacific/Auckland");
+  assert.equal(withTz.PATH, "/usr/bin");
+
+  // null/absent zone -> return the base env untouched (never inject a bad zone).
+  assert.equal(ccusageEnv(null, base), base);
+  assert.equal("CCUSAGE_TIMEZONE" in ccusageEnv(null, base), false);
+});
+
+test("runCcusage passes CCUSAGE_TIMEZONE into the child env", async () => {
+  let capturedEnv;
+  const spawnImpl = (cmd, args, opts) => {
+    capturedEnv = opts.env;
+    return {
+      stdout: { setEncoding() {}, on() {} },
+      stderr: { setEncoding() {}, on() {} },
+      on(event, cb) {
+        if (event === "close") setImmediate(() => cb(0));
+      },
+      kill() {},
+    };
+  };
+
+  await runCcusage("npx", ["--yes", "ccusage", "daily", "--json"], {
+    timeZone: "Pacific/Auckland",
+    spawnImpl,
+  });
+
+  assert.equal(capturedEnv.CCUSAGE_TIMEZONE, "Pacific/Auckland");
 });
