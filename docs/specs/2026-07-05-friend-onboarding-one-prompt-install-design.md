@@ -63,7 +63,7 @@
 1. **环境自举**：`winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements`（Node 同理装 `OpenJS.NodeJS.LTS`）；esptool 用**官方 Windows 独立 exe**（esptool releases 的 win64 zip，免 Python）。装完**开新 shell / 刷新 PATH** 后再验证：`git --version`、`node --version`、`esptool version`。
 2. **取码装依赖**：`git clone` → `cd host && npm install`（仅 serialport + @napi-rs/canvas，均有 Windows 预编译产物）。验证：`npm ls --depth=0` 无 error。
 3. **烧固件**：
-   - **烧前预检**：PowerShell 查 `VID_303A` 的 COM 口（`Get-PnpDevice`/`Win32_SerialPort`）。查不到 → 分支 a) 换 USB **数据**线/换口；b) 设备管理器有带叹号未知设备 → USB-Serial/JTAG 驱动分支（Win10+ 通常内置 CDC 免驱，异常时按 Espressif 官方驱动指引装）；c) 空白片未出串口/后续烧录失败 → **手动进下载模式：按住 BOOT 再插线（上电）**，重新预检。
+   - **烧前预检**：PowerShell 查 `VID_303A` 的 COM 口（`Get-PnpDevice`/`Win32_SerialPort`）。查不到 → 分支 a) 换 USB **数据**线/换口；b) 设备管理器有带叹号未知设备 → USB-Serial/JTAG 驱动分支（Win10+ 通常内置 CDC 免驱，异常时按 Espressif 官方驱动指引装）；c) 空白片未出串口/后续烧录失败 → **手动进下载模式（注意：装了 18650 电池时拔 USB ≠ 断电）**：先把板上电池电源开关拨到 OFF（或有 RESET/EN 键则按住 BOOT 短按 RESET），再按住 BOOT 插线/上电，重新预检。板上开关与按键的确切组合以 owner 同款板实测为准，写入 SETUP 时锁定（plan 阶段验证项）。
    - 下载 Release bin → `esptool --chip esp32s3 --port COMx write-flash 0x0 cpb-firmware-merged.bin`。验证：输出 `Hash of data verified`。失败分支：串口被占用 → 找出占用进程；反复失败 → 走手动 BOOT 流程重试一次后向主人报告。
 4. **配 statusline（usage bridge）**：**merge 而非覆盖** `~/.claude/settings.json`。先读现有配置：**无 `statusLine`（预期主路径，非开发者假设）** → 直配 `statusLine.command = node <abs>/host/src/usage-bridge.mjs`（正斜杠路径）；**已有 `statusLine`** → 用仓库提供的跨平台 fan-out wrapper `host/scripts/cpb-statusline-fanout.mjs`（stdin 同时喂 bridge 与原 command，原状态栏显示不变），并备份原 settings.json。前置检查：`claude --version` ≥ 2.1.80。
 5. **个性化**：Claude 问主人所在城市 → 写 `config.json` 的 `lat`/`lon`（默认值是奥克兰，必须改）。名字用默认"阿布"，改名走 dashboard（手册讲）。
