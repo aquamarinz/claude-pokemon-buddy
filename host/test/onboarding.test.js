@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runOnboarding } from "../src/pet/onboarding.js";
-import { OAK_LINES, CANDIDATES } from "../src/pet/onboarding-data.js";
+import { runOnboarding, runTutorial } from "../src/pet/onboarding.js";
+import { OAK_LINES, CANDIDATES, TUTORIAL_PAGES } from "../src/pet/onboarding-data.js";
 import { renderOnboarding } from "../src/render/onboarding.js";
 import { SOUND } from "../src/transport/proto.js";
 
@@ -90,4 +90,46 @@ test("runOnboarding passes {page,total} to each oak scene", async () => {
   const oakScenes = scenes.filter((scene) => scene.kind === "oak");
   assert.equal(oakScenes.length, OAK_LINES.length);
   assert.ok(oakScenes.every((scene, i) => scene.page === i + 1 && scene.total === OAK_LINES.length));
+});
+
+test("runTutorial: KEY 短按逐页推进，推完所有页返回", async () => {
+  const buttons = TUTORIAL_PAGES.map(() => ({ key: "KEY", kind: "short" }));
+  const { io, pushed } = mockIo(buttons);
+  await runTutorial(io);
+  assert.equal(pushed.length, TUTORIAL_PAGES.length);
+});
+
+test("runTutorial: 第1页 KEY 长按 → 跳过全部，只推了1帧", async () => {
+  const { io, pushed } = mockIo([{ key: "KEY", kind: "long" }]);
+  await runTutorial(io);
+  assert.equal(pushed.length, 1);
+});
+
+test("runTutorial: BOOT 被忽略不前进", async () => {
+  const buttons = [{ key: "BOOT", kind: "short" }, ...TUTORIAL_PAGES.map(() => ({ key: "KEY", kind: "short" }))];
+  const { io, pushed } = mockIo(buttons);
+  await runTutorial(io);
+  assert.equal(pushed.length, TUTORIAL_PAGES.length);
+});
+
+test("教程文案覆盖 spec 要求的三个主题：KEY 两种按法、BOOT、用量", () => {
+  const all = TUTORIAL_PAGES.flat().join("");
+  assert.match(all, /KEY 短按/);
+  assert.match(all, /KEY 长按/);
+  assert.match(all, /BOOT/);
+  assert.match(all, /用量/);
+});
+
+test("runTutorial 每页传 {kind:'oak', lines=该页文案, page, total}", async () => {
+  const scenes = [];
+  const buttons = TUTORIAL_PAGES.map(() => ({ key: "KEY", kind: "short" }));
+  const { io } = mockIo(buttons);
+  await runTutorial(io, { render: async (scene) => { scenes.push(scene); return Buffer.alloc(0); } });
+  assert.equal(scenes.length, TUTORIAL_PAGES.length);
+  scenes.forEach((scene, i) => {
+    assert.equal(scene.kind, "oak");
+    assert.deepEqual(scene.lines, TUTORIAL_PAGES[i]);
+    assert.equal(scene.page, i + 1);
+    assert.equal(scene.total, TUTORIAL_PAGES.length);
+  });
 });
