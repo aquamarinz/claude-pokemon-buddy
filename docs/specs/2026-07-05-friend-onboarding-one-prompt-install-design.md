@@ -60,13 +60,15 @@
 文档结构（每步 = 目的 + 命令 + **机器可判定的验证** + 失败分支）：
 
 0. **给 Claude 的执行契约**（文档序言）：逐步执行；每步验证通过才前进；失败先走文档失败分支再自行诊断；需要主人操作（按键/拔插）时明确说人话；除城市提问外不问不必要的问题。
-1. **环境自举**：`winget install Git.Git OpenJS.NodeJS.LTS`；esptool 用**官方 Windows 独立 exe**（esptool releases 的 win64 zip，免 Python）。验证：`git --version`、`node --version`、`esptool version`。
+1. **环境自举**：`winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements`（Node 同理装 `OpenJS.NodeJS.LTS`）；esptool 用**官方 Windows 独立 exe**（esptool releases 的 win64 zip，免 Python）。装完**开新 shell / 刷新 PATH** 后再验证：`git --version`、`node --version`、`esptool version`。
 2. **取码装依赖**：`git clone` → `cd host && npm install`（仅 serialport + @napi-rs/canvas，均有 Windows 预编译产物）。验证：`npm ls --depth=0` 无 error。
-3. **烧固件**：下载 Release bin → 探测 Espressif COM 口（`esptool` 自动探测；备选 PowerShell 查 `VID_303A`）→ `esptool --chip esp32s3 write-flash 0x0 cpb-firmware-merged.bin`。验证：命令输出 `Hash of data verified`。失败分支：a) 找不到 COM 口 → 检查是否充电线（无数据）、换口；b) 烧录失败/无法进入下载模式 → **按住 BOOT 键插线**再试；c) 串口被占用 → 找出占用进程。
-4. **配 statusline（usage bridge）**：**merge 而非覆盖** `~/.claude/settings.json`，加 `statusLine.command = node <abs>/host/src/usage-bridge.mjs`（正斜杠路径；若已有 statusLine，按 `usage-bridge-setup.md` 的共存说明处理）。前置检查：`claude --version` ≥ 2.1.80。
+3. **烧固件**：
+   - **烧前预检**：PowerShell 查 `VID_303A` 的 COM 口（`Get-PnpDevice`/`Win32_SerialPort`）。查不到 → 分支 a) 换 USB **数据**线/换口；b) 设备管理器有带叹号未知设备 → USB-Serial/JTAG 驱动分支（Win10+ 通常内置 CDC 免驱，异常时按 Espressif 官方驱动指引装）；c) 空白片未出串口/后续烧录失败 → **手动进下载模式：按住 BOOT 再插线（上电）**，重新预检。
+   - 下载 Release bin → `esptool --chip esp32s3 --port COMx write-flash 0x0 cpb-firmware-merged.bin`。验证：输出 `Hash of data verified`。失败分支：串口被占用 → 找出占用进程；反复失败 → 走手动 BOOT 流程重试一次后向主人报告。
+4. **配 statusline（usage bridge）**：**merge 而非覆盖** `~/.claude/settings.json`。先读现有配置：**无 `statusLine`（预期主路径，非开发者假设）** → 直配 `statusLine.command = node <abs>/host/src/usage-bridge.mjs`（正斜杠路径）；**已有 `statusLine`** → 用仓库提供的跨平台 fan-out wrapper `host/scripts/cpb-statusline-fanout.mjs`（stdin 同时喂 bridge 与原 command，原状态栏显示不变），并备份原 settings.json。前置检查：`claude --version` ≥ 2.1.80。
 5. **个性化**：Claude 问主人所在城市 → 写 `config.json` 的 `lat`/`lon`（默认值是奥克兰，必须改）。名字用默认"阿布"，改名走 dashboard（手册讲）。
-6. **开机自启**：Startup 文件夹放 `.vbs`（`wscript` 隐窗拉起 `node src/index.js`，工作目录 = host/）。验证：`Test-Path` 该文件。选 Startup 而非 schtasks：免管理员权限、可见可删、对非开发者最不吓人。
-7. **启动 + 端到端验证**：启动 host → 屏幕出画面（问主人确认）；在 Claude Code 里发一条消息触发 statusline → `Test-Path ~/.claude/cpb-usage.json` 且含数字百分比（仅 Pro/Max 有 `rate_limits`，文档注明）；按一下 KEY 有响应。
+6. **开机自启**：Startup 文件夹放 `.vbs`（`wscript` 隐窗拉起 `node src/index.js`，**脚本内显式设定工作目录 = host/ 绝对路径、node 用绝对路径**，stdout/stderr 落 `out/host.log`）。验证：不止 `Test-Path`——先杀掉手动起的 host，`wscript` 实跑一次该 `.vbs`，确认 host 进程出现且屏幕恢复画面。选 Startup 而非 schtasks：免管理员权限、可见可删、对非开发者最不吓人。
+7. **启动 + 端到端验证**：启动 host → 屏幕出画面（问主人确认）；在 Claude Code 里发一条消息触发 statusline → `~/.claude/cpb-usage.json` 存在且含 `writtenAt`，`fiveHourPct`/`weeklyPct` 为**数字，或为受控 `null`**（`null` = 非 Pro/Max 或首个 API 响应未到；此时提示主人确认订阅档位并再发一条消息，仍 `null` 且非订阅原因才算失败）；按一下 KEY 有响应。
 8. **交接**：进入第 5 幕（讲解手册）。
 
 ### 第 3 幕 · 设备屏孵化（已实现，零改动）
@@ -77,7 +79,8 @@
 1. 按键：KEY 短按/长按干什么、BOOT 键干什么。
 2. 左屏用量表怎么读（5h/周 两条）。
 3. "它靠你的 Claude 用量成长；几天不理它会蔫、会退步——但永远救得回来。" + 收尾。
-- KEY 逐屏推进，长按跳过全部；存档写 `tutorialDone: true`，只出现一次；老存档（已 `hatched` 无该字段）**不补播**。
+- KEY 逐屏推进，长按跳过全部。
+- **存档时序（关键，与现有 `runOnboardingGate` 的"孵化全程结束才落档"不同，见 `host/src/index.js` gate 逻辑）**：孵化诞生确认后**立即落档** `hatched:true, tutorialDone:false` → 播教程 → 教程结束/跳过再落 `tutorialDone:true`。补播规则：仅当字段**显式为 `false`** 时补播（覆盖教程中途断电场景，且不会重孵化）；老存档缺该字段 → 视为已完成，**不补播**。
 - 状态机扩展落在 `host/src/pet/onboarding.js` / `onboarding-data.js`，文案进 data 文件。
 
 ### 第 5 幕 · Claude 讲解手册（新增 PLAYER-GUIDE.md）
@@ -101,25 +104,27 @@ SETUP-WINDOWS.md 末步指示 Claude："用大木博士的口吻，把 PLAYER-GU
 | `README.md` | 仓库根 | P0 |
 | `SETUP-WINDOWS.md`（含指令正文+微信话术） | 仓库根 | P0 |
 | `PLAYER-GUIDE.md` | 仓库根 | P1 |
-| 设备屏轻教程 | `host/src/pet/onboarding.js` + `onboarding-data.js` + 测试 | P1 |
+| 设备屏轻教程（含存档时序调整） | `host/src/pet/onboarding.js` + `onboarding-data.js` + `index.js` gate + 测试 | P1 |
+| 跨平台 statusline fan-out wrapper（共存分支用） | `host/scripts/cpb-statusline-fanout.mjs` + 测试 | P1 |
 | BACKLOG 追加 P2 项 | `docs/plans/BACKLOG.md` | P2 |
 
 ## 6. 测试与验收
 
-**代码（轻教程）**——requirement-driven（node --test）：
-- 孵化完成 → 教程首屏出现；KEY 逐屏推进；长按跳过；末屏后 `tutorialDone:true` 落档。
-- 有 `tutorialDone` 的存档重启 → 不再出现；老存档（`hatched:true` 无该字段）→ 不补播。
-- 教程中断电重启 → 不重复孵化，教程从头播（教程无中途存档，KISS）。
+**代码（轻教程 + fan-out wrapper）**——requirement-driven（node --test）：
+- 孵化诞生确认 → 先落档 `hatched:true, tutorialDone:false`，教程首屏出现；KEY 逐屏推进；长按跳过；末屏后 `tutorialDone:true` 落档。
+- `tutorialDone:true` 的存档重启 → 不再出现；老存档（`hatched:true` 无该字段）→ 不补播。
+- 教程中断电重启（存档 `tutorialDone:false`）→ **不重复孵化**，教程从头补播（教程内部无中途存档，KISS）。
+- `cpb-statusline-fanout.mjs`：stdin 完整转发 bridge 与原 command、原 command 的 stdout 原样透传、任一子进程失败不影响另一路。
 
 **文档（SETUP-WINDOWS.md）**——每步验证命令在真实 Windows 上跑通一遍（owner 已有 Windows 部署环境）；烧录步骤用 Release bin 在自有板上从 `erase-flash` 后的空白态实测一次。
 
-**端到端验收**：空白板 + 干净 Windows 用户环境，只发"那条指令"，Claude 无人工兜底走到第 7 步全绿 → 孵化 → 教程 → 手册讲解完成。
+**端到端验收**：空白板 + 干净 Windows 用户环境，只发"那条指令"，Claude 无人工兜底走到第 7 步全绿 → 孵化 → 教程 → 手册讲解完成；另做一次**注销/重启后自启检查**（登录后 host 自动拉起、屏幕恢复）。
 
 ## 7. 风险
 
 1. **宝可梦 IP（最高风险）**：公开仓库含宝可梦形象/叫声衍生资产 + 仓库名带 pokemon，理论上有 DMCA 下架风险。属个人非商业礼物项目，owner 已选择公开=接受此风险；缓解：README 注明 fan project / 非商业 / 不分发官方 ROM 资产之外的声明。**若未来被下架，退回"打包发行包"分发即可，架构不受影响。**
-2. statusline 覆盖：朋友若已有 statusLine 配置会被替换 → SETUP 写 merge/共存分支。
-3. `rate_limits` 仅 Pro/Max 且首个 API 响应后出现 → 验证步骤已内置"发一条消息再查"。
+2. statusline 覆盖：朋友若已有 statusLine 配置会被替换 → 主路径假设无既有配置；共存分支用新交付的跨平台 fan-out wrapper（现有 bash wrapper 仅 Mac 可用）。
+3. `rate_limits` 仅 Pro/Max 且首个 API 响应后出现 → 验证接受"受控 null"并引导确认订阅档位；Pro/Max 订阅列为体验前提（免费档设备只显示 `--`，养成主循环仍可用 ccusage token 数据）。
 4. Windows 现场差异（杀软拦 winget/esptool、公司机策略）→ SETUP 失败分支 + Claude 现场诊断兜底；无法穷举，验收以干净个人机为准。
 5. esptool 独立 exe 与 merge-bin 参数随 esptool v5 命名变化（`write-flash`/`merge-bin` 连字符化）→ plan 阶段以实测版本为准锁定命令。
 
