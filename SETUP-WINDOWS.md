@@ -159,14 +159,14 @@ Start-Sleep 8; Get-Process node                                  # 预期：node
 ## 7. 端到端验证
 
 1. 屏幕有画面（第 6 步已确认）。
-2. 请主人在**终端版 Claude Code**（就是现在跟你对话的这个 CLI）里**随便发一条消息**——注意：桌面版 App 不触发 statusline，官方用量数据只来自终端会话。然后：
+2. 用量数据有两条路：host 自带的 **poll**（host 跑起来后 ~3 分钟内自动写；主路）+ statusline bridge（辅路）。等 3 分钟后检查：
 
 ```powershell
 Get-Content $HOME\.claude\cpb-usage.json
 ```
 
-预期：JSON 含 `writtenAt`，且 `fiveHourPct`/`weeklyPct` 是**数字**。
-若**文件不存在**（bridge 拿不到 `rate_limits` 时不写文件，这是受控行为）：问主人订阅档位——Pro/Max 才有官方额度数据；是 Pro/Max 就再发一条消息重查；不是也没关系（屏上显示 `--`，养成不受影响），继续。
+预期：JSON 含 `writtenAt`（新鲜时间戳），且 `fiveHourPct`/`weeklyPct` 是**数字**。
+若**文件不存在或数据是 null**：a) 确认 host 已运行超过 3 分钟；b) 在**终端版** Claude Code 里发一条消息（触发辅路 bridge；桌面版 App 不触发 statusline）；c) 仍无 → 问主人订阅档位——Pro/Max 才有官方额度数据；不是也没关系（屏上显示 `--`，养成不受影响），继续。
 3. 请主人**短按一下设备右侧 KEY 键**，确认屏幕有反应。
 
 ## 8. 交接仪式（最后一步）

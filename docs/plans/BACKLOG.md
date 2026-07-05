@@ -51,4 +51,4 @@
 - [ ] 后续更新机制（agent 化 UPDATE.md：git pull + 依赖刷新 + 重启；或自动更新）
 - [ ] 网页烧录器（ESP Web Tools）作为非 Claude 用户的备选安装路径
 - [ ] R2 评审 Medium 沉淀：SETUP 各失败分支随真实案例持续扩充
-- [ ] 桌面版 Claude Code 不触发 statusLine → 官方 5h/周% 无数据源（2026-07-06 实测确认，终端版正常）；关注 CC 桌面版后续是否支持 statusline，或评估替代数据源
+- [ ] 桌面版 Claude Code 不触发 statusLine（2026-07-06 实测；终端版正常且 schema 未变）——仅影响 bridge 辅路，poll 主路不受影响；若未来 poll 端点失效需重估
