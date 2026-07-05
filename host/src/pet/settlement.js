@@ -33,7 +33,7 @@ export function settleDays(
 
 export function settlementWindow(lastSettled, today, maxCatchupDays = 30) {
   if (!lastSettled) return [];
-  return cappedDays(daysBetween(lastSettled, today), maxCatchupDays);
+  return daysBetween(lastSettled, today, maxCatchupDays);
 }
 
 export function activeDaysFromUsage(usage) {
@@ -78,19 +78,17 @@ export function buildUsedDays(pet, today, usage, { maxCatchupDays = 30 } = {}) {
   return used;
 }
 
-function cappedDays(days, maxCatchupDays) {
-  const start = Math.max(0, days.length - maxCatchupDays);
-  return days.slice(start);
-}
-
-function daysBetween(from, to) {
+function daysBetween(from, to, maxCatchupDays) {
   const days = [];
-  let current = new Date(`${from}T00:00:00Z`);
+  const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
+  const deltaDays = Math.floor((Number(end) - Number(start)) / DAY_MS);
+  if (!Number.isFinite(deltaDays) || deltaDays <= 1) return days;
 
-  while (true) {
-    current = new Date(Number(current) + DAY_MS);
-    if (current >= end) break;
+  const count = Math.min(deltaDays - 1, Math.max(0, Math.floor(maxCatchupDays)));
+  const firstOffset = deltaDays - count;
+  for (let offset = firstOffset; offset < deltaDays; offset += 1) {
+    const current = new Date(Number(start) + offset * DAY_MS);
     days.push(toYmd(current));
   }
 

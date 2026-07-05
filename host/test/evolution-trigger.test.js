@@ -23,6 +23,7 @@ test("bond threshold marks ready without auto-evolving species", async () => {
 
   assert.equal(state.species, "eevee");
   assert.equal(state.readyToEvolve, true);
+  assert.equal(state.pendingCandidates, undefined);
 });
 
 test("night RTC plus KEY evolves ready Eevee to Umbreon", async () => {
@@ -89,7 +90,7 @@ test("double-press KEY does not trigger evolution (short-only)", async () => {
   assert.equal(state.pendingCandidates, undefined);
 });
 
-test("KEY stores pending candidates when no-care environmental branches conflict", async () => {
+test("multi-candidate readiness stores pending candidates as choice prompt state", async () => {
   const statePath = join("out", "test-pending-evolve-state.json");
   const framePath = join("out", "test-pending-evolve-frame.png");
   writeState(statePath, { bond: 160, readyToEvolve: true, careCount: 0 });
@@ -101,7 +102,6 @@ test("KEY stores pending candidates when no-care environmental branches conflict
     framePath,
     now: new Date(2026, 4, 30, 10),
     mock: createMockTransport({ framePath, sensor: { t: 24, h: 70 } }),
-    pendingButtons: [{ key: "KEY", kind: "short" }],
   });
 
   assert.equal(state.species, "eevee");
@@ -110,6 +110,34 @@ test("KEY stores pending candidates when no-care environmental branches conflict
     "espeon",
     "leafeon",
   ]);
+});
+
+test("single-candidate auto readiness strips stale pending candidates", async () => {
+  const statePath = join("out", "test-single-auto-strip-pending-state.json");
+  const framePath = join("out", "test-single-auto-strip-pending-frame.png");
+  writeState(statePath, {
+    species: "bulbasaur",
+    level: 14,
+    bond: 0,
+    readyToEvolve: true,
+    pendingCandidates: [
+      { to: "espeon", needs: { bond: 56, daytime: true }, priority: 2 },
+      { to: "leafeon", needs: { bond: 56, warmHumid: true }, priority: 3 },
+    ],
+  });
+
+  const state = await runOneTick({
+    usage: usageWithTokens(0),
+    weather: weather({ temp: 12, humidity: 50 }),
+    statePath,
+    framePath,
+    now: new Date(2026, 4, 30, 10),
+    mock: createMockTransport({ framePath }),
+  });
+
+  assert.equal(state.species, "bulbasaur");
+  assert.equal(state.readyToEvolve, true);
+  assert.equal(state.pendingCandidates, undefined);
 });
 
 test("queued choice intent evolves a currently eligible pending branch on the next tick", async () => {

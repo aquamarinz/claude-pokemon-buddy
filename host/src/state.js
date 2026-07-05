@@ -9,9 +9,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { PARAMS } from "./pet/sim.js";
 
 export const SCHEMA_VERSION = 1;
 const STONES = new Set(["water", "thunder", "fire"]);
+const NUMBER_RANGES = {
+  level: { min: 1 },
+  exp: { min: 0, maxExclusive: PARAMS.levelExp },
+  bond: { min: 0, max: PARAMS.bondSoftCap },
+  streak: { min: 0 },
+  shield: { min: 0, max: 2 },
+  todayCreditedExp: { min: 0 },
+  todayCreditedBond: { min: 0 },
+  careCount: { min: 0 },
+};
 
 export function saveState(path, state) {
   const tmp = `${path}.tmp`;
@@ -36,7 +47,7 @@ export function loadState(path, { logger = console } = {}) {
     sawStateFile = true;
     try {
       const state = JSON.parse(readFileSync(candidate, "utf8"));
-      if (isValidState(state)) return state;
+      if (isValidState(state)) return normalizePet(state);
       const salvaged = salvageState(state);
       if (Object.keys(salvaged).length > 0) partials.push(salvaged);
     } catch {
@@ -45,13 +56,14 @@ export function loadState(path, { logger = console } = {}) {
   }
 
   const salvaged = mergeSalvage(partials);
+  const rebuilt = normalizePet({ schemaVersion: SCHEMA_VERSION, _rebuilt: true, ...salvaged });
   if (sawStateFile) {
     logger?.warn?.("state files invalid; rebuilding from salvageable fields", {
       path,
-      salvaged: Object.keys(salvaged),
+      salvaged: Object.keys(rebuilt).filter((key) => key !== "schemaVersion" && key !== "_rebuilt"),
     });
   }
-  return { schemaVersion: SCHEMA_VERSION, _rebuilt: true, ...salvaged };
+  return rebuilt;
 }
 
 function isValidState(state) {
@@ -93,12 +105,73 @@ function mergeSalvage(partials) {
   return partials.reduce((merged, partial) => ({ ...partial, ...merged }), {});
 }
 
+function normalizePet(state) {
+  const out = { ...state };
+  normalizeDate(out, "lastSettled");
+  normalizeDate(out, "lastGrowthDay");
+  normalizeNumber(out, "level");
+  normalizeNumber(out, "exp");
+  normalizeNumber(out, "bond");
+  normalizeNumber(out, "streak");
+  normalizeNumber(out, "shield");
+  normalizeNumber(out, "todayCreditedExp");
+  normalizeNumber(out, "todayCreditedBond");
+  normalizeNumber(out, "careCount");
+  return out;
+}
+
+function normalizeDate(out, key) {
+  if (!(key in out)) return;
+  if (!isSemanticYmd(out[key])) delete out[key];
+}
+
+function isSemanticYmd(value) {
+  if (typeof value !== "string") return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(Number(date))) return false;
+  try {
+    return date.toISOString().slice(0, 10) === value;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeNumber(out, key) {
+  if (!(key in out)) return;
+  const value = out[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    delete out[key];
+    return;
+  }
+  out[key] = clampNumber(value, NUMBER_RANGES[key]);
+}
+
+function clampNumber(value, range) {
+  let next = value;
+  if (range.min != null) next = Math.max(range.min, next);
+  if (range.max != null) next = Math.min(range.max, next);
+  if (range.maxExclusive != null && next >= range.maxExclusive) {
+    next = range.maxExclusive - 1;
+  }
+  return next;
+}
+
 function copyString(out, state, key) {
   if (typeof state[key] === "string" && state[key].length > 0) out[key] = state[key];
 }
 
 function copyNumber(out, state, key) {
-  if (typeof state[key] === "number" && Number.isFinite(state[key])) out[key] = state[key];
+  const value = state[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) return;
+  if (!isInRange(value, NUMBER_RANGES[key])) return;
+  out[key] = value;
+}
+
+function isInRange(value, range) {
+  if (range.min != null && value < range.min) return false;
+  if (range.max != null && value > range.max) return false;
+  if (range.maxExclusive != null && value >= range.maxExclusive) return false;
+  return true;
 }
 
 function copyBoolean(out, state, key) {

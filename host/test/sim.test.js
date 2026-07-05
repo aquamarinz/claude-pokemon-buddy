@@ -20,6 +20,12 @@ test("deriveMood treats unknown (null/undefined) utilization as neutral, not hap
   assert.equal(deriveMood({ p5h: null, todayCost: 30 }), "shocked");
 });
 
+test("deriveMood treats stale rate utilization as unknown but preserves cost spike mood", () => {
+  assert.equal(deriveMood({ p5h: 100, rateStale: true }), "focused");
+  assert.equal(deriveMood({ p5h: 100, rateStale: false }), "fainted");
+  assert.equal(deriveMood({ todayCost: 30, p5h: 100, rateStale: true }), "shocked");
+});
+
 test("applyDailyGrowth caps EXP gain and bond gain per day", () => {
   const pet = { level: 1, exp: 90, bond: 100, lastGrowthDay: "2026-06-17", todayCreditedExp: 0, todayCreditedBond: 0 };
 

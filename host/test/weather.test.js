@@ -71,6 +71,56 @@ test("on fetch fail returns last-known degraded weather", async () => {
   assert.equal(r.cond, "晴");
 });
 
+test("null current weather scalar returns degraded null weather", async () => {
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      current: {
+        temperature_2m: null,
+        apparent_temperature: 17,
+        relative_humidity_2m: 64,
+        weather_code: 3,
+        wind_speed_10m: 11,
+      },
+      daily: {
+        temperature_2m_max: [22],
+        temperature_2m_min: [14],
+        precipitation_probability_max: [30],
+      },
+    }),
+  });
+
+  const w = makeWeather({ fetch: fakeFetch });
+  const r = await w.get(-36.8, 174.7);
+
+  assert.deepEqual(r, { cond: "—", temp: null, degraded: true });
+});
+
+test("empty daily weather array returns degraded null weather", async () => {
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      current: {
+        temperature_2m: 19,
+        apparent_temperature: 17,
+        relative_humidity_2m: 64,
+        weather_code: 3,
+        wind_speed_10m: 11,
+      },
+      daily: {
+        temperature_2m_max: [],
+        temperature_2m_min: [14],
+        precipitation_probability_max: [30],
+      },
+    }),
+  });
+
+  const w = makeWeather({ fetch: fakeFetch });
+  const r = await w.get(-36.8, 174.7);
+
+  assert.deepEqual(r, { cond: "—", temp: null, degraded: true });
+});
+
 test("hung weather fetch aborts at timeout and returns degraded null weather", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let sawSignal = false;

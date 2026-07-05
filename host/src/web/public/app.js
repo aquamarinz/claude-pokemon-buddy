@@ -38,6 +38,8 @@ const form = document.getElementById("settings-form");
 const statusEl = document.getElementById("settings-status");
 const volume = document.getElementById("settings-volume");
 const volumeValue = document.getElementById("volume-value");
+let currentSpecies = null;
+let pendingEvolution = null;
 
 volume.addEventListener("input", () => {
   volumeValue.textContent = volume.value;
@@ -112,6 +114,7 @@ function renderWeather(weather, room) {
 }
 
 function renderBuddy(buddy, difficulty) {
+  observeSpecies(buddy.species);
   const species = speciesInfo(buddy.species);
   setText("difficulty", difficulty ?? "--");
   setText("difficulty-lock", difficulty ?? "NORMAL · 锁定");
@@ -182,7 +185,7 @@ function renderEvolutionControls(nextEvo, buddy) {
   if (!root) return;
   root.textContent = "";
 
-  const candidates = Array.isArray(nextEvo.pendingCandidates) ? nextEvo.pendingCandidates : [];
+  const candidates = nextEvo.ready && Array.isArray(nextEvo.pendingCandidates) ? nextEvo.pendingCandidates : [];
   const showStoneButtons = buddy.species === "eevee";
   if (candidates.length === 0 && !showStoneButtons) {
     root.hidden = true;
@@ -252,8 +255,17 @@ async function postEvolutionIntent(path, body) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || "提交失败");
-  setStatus("已提交");
-  await loadState();
+  pendingEvolution = { from: currentSpecies, to: json.to ?? null };
+  setStatus("已排队");
+}
+
+function observeSpecies(species) {
+  if (typeof species !== "string" || species.length === 0) return;
+  if (pendingEvolution?.from && species !== pendingEvolution.from) {
+    setStatus(`已进化为 ${speciesInfo(species).label}`);
+    pendingEvolution = null;
+  }
+  currentSpecies = species;
 }
 
 function renderBox(view) {

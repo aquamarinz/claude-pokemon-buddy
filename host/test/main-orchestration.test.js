@@ -174,6 +174,64 @@ test("main logs pollUsage failures once per reason transition", async () => {
   ]);
 });
 
+test("main logs loadUsageSnapshot failures once per reason transition", async () => {
+  mkdirSync("out", { recursive: true });
+  const statePath = join("out", "test-main-ar6-usage-state.json");
+  const framePath = join("out", "test-main-ar6-usage-frame.png");
+  const configPath = join("out", "test-main-ar6-usage-config.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true });
+  rmSync(configPath, { force: true });
+  writeState(statePath);
+
+  const usageResults = [
+    "schema drift",
+    "schema drift",
+    "ccusage unavailable",
+    "ccusage unavailable",
+    null,
+    "ccusage unavailable",
+  ];
+  let usageTicks = 0;
+  const warnings = [];
+  const running = main({
+    once: false,
+    intervalMs: 0,
+    dashboard: false,
+    statePath,
+    framePath,
+    configPath,
+    transport: createBitmapMockTransport({
+      onPush: () => {
+        if (usageTicks >= usageResults.length) process.emit("SIGINT");
+      },
+    }),
+    weatherClient: {
+      get: async () => ({ cond: "多云", temp: 19, feels: 17, hi: 22, lo: 14, precip: 30, wind: 11, humidity: 64, degraded: false }),
+    },
+    pollUsage: async () => ({ ok: true, skipped: true }),
+    usageRun: async (_command, args) => {
+      if (args.includes("daily")) return dailyJson;
+      const result = usageResults[usageTicks++];
+      if (result) throw new Error(result);
+      return blocksJson;
+    },
+    logger: { warn: (message) => warnings.push(String(message)) },
+  });
+
+  const result = await Promise.race([
+    running.then(() => "settled"),
+    sleep(500).then(() => "timeout"),
+  ]);
+
+  assert.equal(result, "settled");
+  assert.deepEqual(warnings, [
+    "loadUsageSnapshot failed: schema drift",
+    "loadUsageSnapshot failed: ccusage unavailable",
+    "loadUsageSnapshot failed: ccusage unavailable",
+  ]);
+});
+
 test("a button that arrived before the tick is buffered and drained into the tick (H4 via main once-mode)", async () => {
   mkdirSync("out", { recursive: true });
   const statePath = join("out", "test-main-h4-state.json");

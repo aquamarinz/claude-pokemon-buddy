@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
 
-export async function loadUsageSnapshot({ run = runCcusage, today = localYmd(new Date()) } = {}) {
+export async function loadUsageSnapshot({ run = runCcusage, today = localYmd(new Date()), timeZone = hostTimeZone() } = {}) {
   try {
     // --yes skips npx's first-run "Ok to proceed?" prompt. With stdin ignored
     // that prompt hangs forever and wedges the whole tick loop.
-    const blocksJson = await run("npx", ["--yes", "ccusage", "blocks", "--json"]);
-    const dailyJson = await run("npx", ["--yes", "ccusage", "daily", "--json"]);
+    // timeZone pins ccusage's daily/blocks bucketing to the host's local calendar
+    // (ccusage buckets by UTC by default), so daily.period aligns with the local
+    // `today` from localYmd — otherwise non-UTC users mis-credit today's tokens and
+    // mis-judge activeDays across the day boundary (see AR8/PRE-1).
+    const blocksJson = await run("npx", ["--yes", "ccusage", "blocks", "--json"], { timeZone });
+    const dailyJson = await run("npx", ["--yes", "ccusage", "daily", "--json"], { timeZone });
     return {
       ok: true,
       ...normalizeUsage({ blocksJson, dailyJson, today }),
     };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, reason: errorReason(error) };
   }
 }
 
@@ -91,9 +95,9 @@ export function normalizeUsage({ blocksJson, dailyJson, today = localYmd(new Dat
   };
 }
 
-function runCcusage(command, args, { timeoutMs = 60_000 } = {}) {
+export function runCcusage(command, args, { timeoutMs = 60_000, timeZone, spawnImpl = spawn } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnImpl(command, args, { stdio: ["ignore", "pipe", "pipe"], env: ccusageEnv(timeZone) });
     let stdout = "";
     let stderr = "";
 
@@ -140,6 +144,29 @@ function numberField(value, label) {
 function stringField(value, label) {
   if (typeof value === "string" && value.length > 0) return value;
   throw new Error(`expected string: ${label}`);
+}
+
+function errorReason(error) {
+  return error?.message ? error.message : "error";
+}
+
+// Host's IANA timezone (e.g. "Pacific/Auckland"); null if unavailable so callers
+// fall back to ccusage's default bucketing rather than forcing a bad zone.
+export function hostTimeZone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof tz === "string" && tz.length > 0 ? tz : null;
+  } catch {
+    return null;
+  }
+}
+
+// Child env with CCUSAGE_TIMEZONE set to the host zone. Using the env var (not the
+// --timezone flag) is backward-safe: an old ccusage silently ignores an unknown env
+// (degrades to status-quo UTC bucketing) whereas an unknown flag would exit non-zero
+// and wedge usage. When timeZone is null we leave process.env untouched.
+export function ccusageEnv(timeZone, baseEnv = process.env) {
+  return timeZone ? { ...baseEnv, CCUSAGE_TIMEZONE: timeZone } : baseEnv;
 }
 
 function localYmd(date) {

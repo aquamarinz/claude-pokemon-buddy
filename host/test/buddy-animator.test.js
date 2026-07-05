@@ -79,3 +79,62 @@ test("animator skips a frame when getModel returns null (no model yet)", async (
   animator.stop();
   assert.equal(pushes.length, 0); // 无 model 不推
 });
+
+test("animator throttles consecutive render failure warnings", async (t) => {
+  let attempts = 0;
+  const warnings = [];
+  const animator = createBuddyAnimator({
+    transport: { push: async () => {} },
+    getModel: () => ({ buddy: {} }),
+    render: () => {
+      attempts += 1;
+      throw new Error("render failed");
+    },
+    intervalMs: 0,
+    sleep: () => new Promise((r) => setImmediate(r)),
+    logger: { warn: (...args) => warnings.push(args) },
+  });
+  t.after(() => animator.stop());
+
+  animator.start();
+  await waitFor(() => attempts >= 60);
+  animator.stop();
+
+  assert.ok(warnings.length >= 1);
+  assert.ok(warnings.length <= 3);
+  assert.ok(warnings.length < attempts);
+});
+
+test("animator resets failure throttle after a successful frame", async (t) => {
+  let attempts = 0;
+  const warnings = [];
+  const outcomes = ["fail", "fail", "success", "fail"];
+  const animator = createBuddyAnimator({
+    transport: { push: async () => {} },
+    getModel: () => ({ buddy: {} }),
+    render: (model) => {
+      const outcome = outcomes[attempts] ?? "success";
+      attempts += 1;
+      if (outcome === "fail") throw new Error("render failed");
+      return { animPhase: model.buddy.animPhase };
+    },
+    intervalMs: 0,
+    sleep: () => new Promise((r) => setImmediate(r)),
+    logger: { warn: (...args) => warnings.push(args) },
+  });
+  t.after(() => animator.stop());
+
+  animator.start();
+  await waitFor(() => attempts >= outcomes.length);
+  animator.stop();
+
+  assert.equal(warnings.length, 2);
+});
+
+async function waitFor(predicate, maxTicks = 500) {
+  for (let i = 0; i < maxTicks; i += 1) {
+    if (predicate()) return;
+    await tick();
+  }
+  throw new Error("condition was not met");
+}

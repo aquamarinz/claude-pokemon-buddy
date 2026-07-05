@@ -148,13 +148,14 @@ async function routeRequest(req, res, context) {
       return;
     }
 
+    let result;
     try {
-      await context.chooseEvolution(body.to);
+      result = await context.chooseEvolution(body.to);
     } catch (error) {
       respondJson(res, 400, { error: error.message });
       return;
     }
-    respondJson(res, 200, { ok: true, to: body.to });
+    respondJson(res, 202, { ok: true, queued: true, to: result?.to ?? body.to });
     return;
   }
 
@@ -173,8 +174,14 @@ async function routeRequest(req, res, context) {
       return;
     }
 
-    await context.grantEvolutionStone(body.stone);
-    respondJson(res, 200, { ok: true, stone: body.stone });
+    let result;
+    try {
+      result = await context.grantEvolutionStone(body.stone);
+    } catch (error) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+    respondJson(res, 202, { ok: true, queued: true, stone: body.stone, to: result?.to });
     return;
   }
 
