@@ -159,7 +159,7 @@ Start-Sleep 8; Get-Process node                                  # 预期：node
 ## 7. 端到端验证
 
 1. 屏幕有画面（第 6 步已确认）。
-2. 请主人在 Claude Code 里**随便发一条消息**，然后：
+2. 请主人在**终端版 Claude Code**（就是现在跟你对话的这个 CLI）里**随便发一条消息**——注意：桌面版 App 不触发 statusline，官方用量数据只来自终端会话。然后：
 
 ```powershell
 Get-Content $HOME\.claude\cpb-usage.json
