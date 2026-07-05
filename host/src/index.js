@@ -10,7 +10,7 @@ import { rollPersonality } from "./pet/personality.js";
 import { applyDailyGrowth, deriveMood, PARAMS } from "./pet/sim.js";
 import { buildUsedDays, settleDays } from "./pet/settlement.js";
 import { applyPetTransitions, drainEvolutionIntents, ensurePet, evolutionContext } from "./pet/transitions.js";
-import { runOnboarding } from "./pet/onboarding.js";
+import { runOnboarding, runTutorial } from "./pet/onboarding.js";
 import { createBuddyAnimator } from "./render/buddy-animator.js";
 import { playEvolutionAnimation } from "./render/evolution-anim.js";
 import { renderFrame } from "./render/frame.js";
@@ -265,6 +265,10 @@ export async function main({
     onboarding: async () => {
       const { io, off } = makeOnboardingIo(hostTransport);
       try { return await runOnboarding(io); } finally { off?.(); }
+    },
+    tutorial: async () => {
+      const { io, off } = makeOnboardingIo(hostTransport);
+      try { await runTutorial(io); } finally { off?.(); }
     },
   });
 
@@ -547,15 +551,27 @@ export async function runOnboardingGate({
   statePath,
   today = localYmd(new Date()),
   onboarding,             // 注入：() => Promise<{species,name}>（真实由 transport io 驱动）
+  tutorial = async () => {}, // 注入：() => Promise<void>；诞生落档后播放
   personalityRng = Math.random,
 }) {
   const existing = loadState(statePath);
-  if (existing?.hatched) return existing;
+  if (existing?.hatched) {
+    if (existing.tutorialDone === false) return finishTutorial(statePath, existing, tutorial);
+    return existing;
+  }
   const { species, name } = await onboarding();
   mkdirSync(dirname(statePath), { recursive: true });
-  const newborn = makeNewborn(species, name, today, personalityRng);
+  // 诞生即落档（tutorialDone:false）→ 教程中断电也不会重孵化
+  const newborn = { ...makeNewborn(species, name, today, personalityRng), tutorialDone: false };
   saveState(statePath, newborn);
-  return newborn;
+  return finishTutorial(statePath, newborn, tutorial);
+}
+
+async function finishTutorial(statePath, pet, tutorial) {
+  await tutorial();
+  const done = { ...pet, tutorialDone: true };
+  saveState(statePath, done);
+  return done;
 }
 
 function makeNewborn(species, name, today, personalityRng = Math.random) {

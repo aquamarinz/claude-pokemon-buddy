@@ -515,8 +515,9 @@ test("onboarding button handling is isolated before the resident dispatcher star
   assert.equal(state.hatched, true);
   assert.equal(state.species, "eevee");
   assert.equal(state.careCount, undefined);
+  assert.equal(state.tutorialDone, true);
   assert.equal(transport.maxListenerCount(), 1);
-  assert.equal(transport.subscriptionCount(), 2); // onboarding, then resident dispatcher after onboarding cleanup
+  assert.equal(transport.subscriptionCount(), 3); // onboarding io → tutorial io → resident dispatcher，串行不叠listener
 });
 
 test("evolution choice intent submitted during a tick is applied on the next tick without clobbering state", async () => {
@@ -742,6 +743,8 @@ function createOnboardingTransport() {
         emitAfterPush({ key: "KEY", kind: "long" });
       } else if (pushes === OAK_LINES.length + 14) {
         emitAfterPush({ key: "KEY", kind: "short" });
+      } else if (pushes === OAK_LINES.length + 15) {
+        emitAfterPush({ key: "KEY", kind: "long" }); // 教程首屏：长按跳过全部
       }
       return { ok: true };
     },

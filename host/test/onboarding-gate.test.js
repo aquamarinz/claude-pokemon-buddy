@@ -60,3 +60,69 @@ test("makeOnboardingIo buffers button presses FIFO while frames are pushing", as
   off();
   assert.equal(onButton, null);
 });
+
+test("新孵化：教程开始前存档已是 hatched:true+tutorialDone:false；结束后 true", async () => {
+  const statePath = join("out", "test-gate-tutorial.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true }); // loadState 会回退读 .bak，须一并清理
+  let midState = null;
+  const result = await runOnboardingGate({
+    statePath, today: "2026-07-05",
+    onboarding: async () => ({ species: "eevee", name: "伊布" }),
+    tutorial: async () => { midState = JSON.parse(readFileSync(statePath, "utf8")); },
+    personalityRng: () => 0.5,
+  });
+  assert.equal(midState.hatched, true);
+  assert.equal(midState.tutorialDone, false);   // 教程前已落档 → 断电不重孵化
+  assert.equal(result.tutorialDone, true);
+  assert.equal(JSON.parse(readFileSync(statePath, "utf8")).tutorialDone, true);
+});
+
+test("hatched+tutorialDone:false（教程中断电）→ 只补播教程，不重孵化", async () => {
+  const statePath = join("out", "test-gate-replay.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true }); // loadState 会回退读 .bak，须一并清理
+  // schemaVersion 必须带上：loadState 对缺版本的档走 salvage 重建，会丢 tutorialDone
+  writeFileSync(statePath, JSON.stringify({ schemaVersion: 1, hatched: true, species: "squirtle", level: 3, tutorialDone: false }));
+  let onboardingCalled = false, tutorialCalled = false;
+  const result = await runOnboardingGate({
+    statePath, today: "2026-07-05",
+    onboarding: async () => { onboardingCalled = true; return { species: "x", name: "x" }; },
+    tutorial: async () => { tutorialCalled = true; },
+  });
+  assert.equal(onboardingCalled, false);
+  assert.equal(tutorialCalled, true);
+  assert.equal(result.species, "squirtle");     // 存档其余字段不丢
+  assert.equal(result.level, 3);
+  assert.equal(result.tutorialDone, true);
+});
+
+test("老存档（hatched 无 tutorialDone 字段）→ 不补播", async () => {
+  const statePath = join("out", "test-gate-legacy.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true }); // loadState 会回退读 .bak，须一并清理
+  writeFileSync(statePath, JSON.stringify({ schemaVersion: 1, hatched: true, species: "umbreon", level: 9 }));
+  let tutorialCalled = false;
+  const result = await runOnboardingGate({
+    statePath, today: "2026-07-05",
+    onboarding: async () => ({ species: "x", name: "x" }),
+    tutorial: async () => { tutorialCalled = true; },
+  });
+  assert.equal(tutorialCalled, false);
+  assert.equal(result.species, "umbreon");
+  assert.equal("tutorialDone" in result, false); // 老档不补写字段
+});
+
+test("hatched+tutorialDone:true → 都不调用", async () => {
+  const statePath = join("out", "test-gate-done.json");
+  rmSync(statePath, { force: true });
+  rmSync(`${statePath}.bak`, { force: true }); // loadState 会回退读 .bak，须一并清理
+  writeFileSync(statePath, JSON.stringify({ schemaVersion: 1, hatched: true, species: "eevee", tutorialDone: true }));
+  let called = 0;
+  await runOnboardingGate({
+    statePath, today: "2026-07-05",
+    onboarding: async () => { called += 1; return { species: "x", name: "x" }; },
+    tutorial: async () => { called += 1; },
+  });
+  assert.equal(called, 0);
+});
