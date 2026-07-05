@@ -13,10 +13,12 @@ idf.py build
 
 ```bash
 cd build   # 以下第 3、4 节命令都在 firmware/build 目录执行
-esptool --chip esp32s3 merge-bin -o cpb-firmware-merged.bin @flash_args
+# 实测（2026-07-06）：先 source ~/esp/esp-idf/export.sh；IDF 5.4 env 内是 esptool v4，
+# 子命令用下划线 merge_bin；系统 esptool v5 则是连字符 merge-bin，二选一均可
+python -m esptool --chip esp32s3 merge_bin -o cpb-firmware-merged.bin @flash_args
 ```
 
-> `flash_args` 是 idf.py build 生成的烧录参数清单（含 bootloader/分区表/app 的偏移），merge-bin 直接消费它，偏移永不手抄。
+> `flash_args` 是 idf.py build 生成的烧录参数清单（含 bootloader/分区表/app 的偏移），merge_bin 直接消费它，偏移永不手抄。
 
 ## 3. 空白态实测（发布前必做）
 
