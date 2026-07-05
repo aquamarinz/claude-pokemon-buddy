@@ -1,5 +1,5 @@
 import { renderOnboarding } from "../render/onboarding.js";
-import { CANDIDATES, OAK_LINES } from "./onboarding-data.js";
+import { CANDIDATES, OAK_LINES, TUTORIAL_PAGES } from "./onboarding-data.js";
 import { SOUND } from "../transport/proto.js";
 
 const HATCH_FRAMES = 12;
@@ -45,5 +45,26 @@ async function waitKey(io) {
   for (;;) {
     const b = await io.nextButton();
     if (b?.key === "KEY") return;
+  }
+}
+
+export async function runTutorial(io, { render = renderOnboarding } = {}) {
+  for (let i = 0; i < TUTORIAL_PAGES.length; i += 1) {
+    await io.push(await render({
+      kind: "oak",
+      lines: TUTORIAL_PAGES[i],
+      page: i + 1,
+      total: TUTORIAL_PAGES.length,
+    }));
+    if (await waitKeyOrSkip(io)) return;
+  }
+}
+
+// KEY 长按=跳过全部教程；KEY 短按=下一页；BOOT/其它忽略
+async function waitKeyOrSkip(io) {
+  for (;;) {
+    const b = await io.nextButton();
+    if (b?.key === "KEY" && b.kind === "long") return true;
+    if (b?.key === "KEY") return false;
   }
 }
