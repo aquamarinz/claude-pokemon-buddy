@@ -29,6 +29,8 @@
 - **OPT-4（Low）** `diffRect` 全扫无早退、`bitAt` 重算 rowBytes（`diff.js:9-18,35-39`）。
 
 ### 可维护性 / Nit
+- **MNT-2（Low，usage-poll）** `DEFAULT_VERSION="2.1.0"` UA 回退值随时间漂移，端点对旧 UA 可能 429（`usage-poll.mjs:10`）；且 `ccVersion` 每次未节流 poll 都 spawnSync `claude --version`（阻塞 ~百 ms）——可进程内缓存一次。另注：同机 CodexBar 轮询同一 `/api/oauth/usage` 端点,与 buddy 共享账号级限流配额,排查 429 时需一并考虑。
+- **MNT-3（Low，测试）** `main-orchestration.test.js` 用 `sleep(500)` 竞速判定 settled,`--test-concurrency=4` 高负载下偶发 timeout 抖动（2026-07-05 全量跑复现一次,单跑稳定绿）。可改条件轮询替代固定竞速窗口。
 - **MNT-1（Low）** 重复 helper：`volumeByte`×3（index.js:608 / transport/index.js:105 / serial.js:427）、`fsync*`/`isParseableJsonFile`×2（config.js:76-106 == state.js:123-153）、`localYmd`×2（index.js:585 / usage.js:145）。抽取须保留 **0..100 音量契约** 与 **fsync/rename 崩溃安全**。
 - **N1（Nit）** onboarding 按键缓冲上限 8 静默丢弃（`index.js:538`）。
 - **N2（Nit）** `weekTokens` 生产环境无消费者（死计算，`usage.js:63-65`；测试仍读）。

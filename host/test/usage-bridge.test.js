@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,18 +35,38 @@ test("extracts rate_limits and writes usage.json + prints statusline", () => {
   assert.match(res.stdout, /9%/); // statusline 一行含 5h%
 });
 
-test("missing rate_limits → nulls, still exit 0 (never crash CC)", () => {
+test("missing rate_limits → no write, still exit 0 (never crash CC)", () => {
   const { res, path } = run({ model: { display_name: "Sonnet" } });
   assert.equal(res.status, 0);
-  const j = JSON.parse(readFileSync(path, "utf8"));
-  assert.equal(j.fiveHourPct, null);
-  assert.equal(j.weeklyPct, null);
+  assert.equal(existsSync(path), false);
+  assert.match(res.stdout, /5h --/);
+  assert.match(res.stdout, /wk --/);
 });
 
-test("malformed stdin → exit 0, nulls", () => {
+test("malformed stdin → exit 0, no write", () => {
   const out = mkdtempSync(join(tmpdir(), "cpb-bridge-"));
   const path = join(out, "cpb-usage.json");
   const res = spawnSync("node", [BRIDGE], { input: "not json{", env: { ...process.env, CPB_USAGE_PATH: path }, encoding: "utf8" });
   assert.equal(res.status, 0);
-  assert.equal(JSON.parse(readFileSync(path, "utf8")).fiveHourPct, null);
+  assert.equal(existsSync(path), false);
+  assert.match(res.stdout, /5h --/);
+  assert.match(res.stdout, /wk --/);
+});
+
+test("missing rate_limits preserves existing good usage file byte-for-byte", () => {
+  const out = mkdtempSync(join(tmpdir(), "cpb-bridge-"));
+  const path = join(out, "cpb-usage.json");
+  const existing = '{"fiveHourPct":17,"weeklyPct":63,"writtenAt":1750000000}';
+  writeFileSync(path, existing);
+
+  const res = spawnSync("node", [BRIDGE], {
+    input: JSON.stringify({ model: { display_name: "Sonnet" } }),
+    env: { ...process.env, CPB_USAGE_PATH: path },
+    encoding: "utf8",
+  });
+
+  assert.equal(res.status, 0);
+  assert.equal(readFileSync(path, "utf8"), existing);
+  assert.match(res.stdout, /5h --/);
+  assert.match(res.stdout, /wk --/);
 });

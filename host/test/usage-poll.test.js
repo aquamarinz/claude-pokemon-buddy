@@ -34,6 +34,14 @@ function usageResp() {
   };
 }
 
+function fetchUsageOk(data = usageResp()) {
+  return { status: 200, data };
+}
+
+function attemptState() {
+  return { lastAttemptSec: 0 };
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -107,7 +115,7 @@ test("fetchUsage calls official endpoint with OAuth headers and returns JSON", a
       return { status: 200, json: async () => body };
     },
   });
-  assert.deepEqual(result, body);
+  assert.deepEqual(result, { status: 200, data: body });
   assert.equal(request.url, "https://api.anthropic.com/api/oauth/usage");
   assert.equal(request.init.method, "GET");
   assert.equal(request.init.headers.Authorization, "Bearer oauth-token");
@@ -116,9 +124,9 @@ test("fetchUsage calls official endpoint with OAuth headers and returns JSON", a
   assert.equal(request.init.headers["Content-Type"], "application/json");
 });
 
-test("fetchUsage returns null on non-200 responses and thrown fetches", async () => {
-  assert.equal(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => ({ status: 429 }) }), null);
-  assert.equal(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => ({ status: 401 }) }), null);
+test("fetchUsage returns HTTP status on non-200 responses and null on thrown fetches", async () => {
+  assert.deepEqual(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => ({ status: 429 }) }), { status: 429, data: null });
+  assert.deepEqual(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => ({ status: 401 }) }), { status: 401, data: null });
   assert.equal(await fetchUsage("token", { version: "2.3.4", fetchImpl: async () => { throw new Error("network"); } }), null);
 });
 
@@ -143,6 +151,7 @@ test("pollUsageOnce aborts hung official usage fetch and keeps degraded last-kno
       });
     },
     timeoutSignal: timeoutSignalFactory(),
+    attemptState: attemptState(),
   }).then((result) => {
     settled = true;
     return result;
@@ -203,8 +212,9 @@ test("pollUsageOnce skips network when existing usage file is inside throttle wi
     readOAuthTokenImpl: () => "token",
     fetchUsageImpl: async () => {
       fetchCalls += 1;
-      return usageResp();
+      return fetchUsageOk();
     },
+    attemptState: attemptState(),
   });
 
   assert.deepEqual(result, { ok: true, skipped: true });
@@ -226,8 +236,9 @@ test("pollUsageOnce calls fetch and writes usage file when no throttle file exis
       fetchCalls += 1;
       assert.equal(token, "token");
       assert.equal(version, "2.3.4");
-      return usageResp();
+      return fetchUsageOk();
     },
+    attemptState: attemptState(),
   });
 
   assert.deepEqual(result, { ok: true });
@@ -244,7 +255,8 @@ test("pollUsageOnce calls fetch and writes usage file when existing usage is exp
     now: NOW_MS,
     minIntervalSec: 180,
     readOAuthTokenImpl: () => "token",
-    fetchUsageImpl: async () => usageResp(),
+    fetchUsageImpl: async () => fetchUsageOk(),
+    attemptState: attemptState(),
   });
 
   assert.deepEqual(result, { ok: true });
@@ -260,14 +272,32 @@ test("pollUsageOnce keeps existing file when token is unavailable", async (t) =>
     usagePath,
     now: NOW_MS,
     readOAuthTokenImpl: () => null,
-    fetchUsageImpl: async () => usageResp(),
+    fetchUsageImpl: async () => fetchUsageOk(),
+    attemptState: attemptState(),
   });
 
   assert.deepEqual(result, { ok: false, reason: "no-token" });
   assert.deepEqual(readJson(usagePath), existing);
 });
 
-test("pollUsageOnce keeps existing file when fetch fails", async (t) => {
+test("pollUsageOnce keeps existing file and reports status when usage fetch returns non-200", async (t) => {
+  const usagePath = tempUsagePath(t);
+  const existing = { fiveHourPct: 11, weeklyPct: 22, writtenAt: NOW_SEC - 181 };
+  writeFileSync(usagePath, JSON.stringify(existing));
+
+  const result = await pollUsageOnce({
+    usagePath,
+    now: NOW_MS,
+    readOAuthTokenImpl: () => "token",
+    fetchUsageImpl: async () => ({ status: 429, data: null }),
+    attemptState: attemptState(),
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "http-429" });
+  assert.deepEqual(readJson(usagePath), existing);
+});
+
+test("pollUsageOnce keeps existing file when fetch fails without a response", async (t) => {
   const usagePath = tempUsagePath(t);
   const existing = { fiveHourPct: 11, weeklyPct: 22, writtenAt: NOW_SEC - 181 };
   writeFileSync(usagePath, JSON.stringify(existing));
@@ -277,10 +307,78 @@ test("pollUsageOnce keeps existing file when fetch fails", async (t) => {
     now: NOW_MS,
     readOAuthTokenImpl: () => "token",
     fetchUsageImpl: async () => null,
+    attemptState: attemptState(),
   });
 
   assert.deepEqual(result, { ok: false, reason: "fetch-failed" });
   assert.deepEqual(readJson(usagePath), existing);
+});
+
+test("pollUsageOnce skips retry inside minInterval after fetch failure", async (t) => {
+  const usagePath = tempUsagePath(t);
+  const state = attemptState();
+  let fetchCalls = 0;
+
+  const first = await pollUsageOnce({
+    usagePath,
+    now: NOW_MS,
+    minIntervalSec: 180,
+    readOAuthTokenImpl: () => "token",
+    fetchUsageImpl: async () => {
+      fetchCalls += 1;
+      return null;
+    },
+    attemptState: state,
+  });
+  const second = await pollUsageOnce({
+    usagePath,
+    now: NOW_MS,
+    minIntervalSec: 180,
+    readOAuthTokenImpl: () => "token",
+    fetchUsageImpl: async () => {
+      fetchCalls += 1;
+      return fetchUsageOk();
+    },
+    attemptState: state,
+  });
+
+  assert.deepEqual(first, { ok: false, reason: "fetch-failed" });
+  assert.deepEqual(second, { ok: true, skipped: true });
+  assert.equal(fetchCalls, 1);
+});
+
+test("pollUsageOnce retries after failed attempt minInterval elapses", async (t) => {
+  const usagePath = tempUsagePath(t);
+  const state = attemptState();
+  let fetchCalls = 0;
+
+  const first = await pollUsageOnce({
+    usagePath,
+    now: NOW_MS,
+    minIntervalSec: 180,
+    readOAuthTokenImpl: () => "token",
+    fetchUsageImpl: async () => {
+      fetchCalls += 1;
+      return null;
+    },
+    attemptState: state,
+  });
+  const second = await pollUsageOnce({
+    usagePath,
+    now: NOW_MS + 181_000,
+    minIntervalSec: 180,
+    readOAuthTokenImpl: () => "token",
+    fetchUsageImpl: async () => {
+      fetchCalls += 1;
+      return fetchUsageOk();
+    },
+    attemptState: state,
+  });
+
+  assert.deepEqual(first, { ok: false, reason: "fetch-failed" });
+  assert.deepEqual(second, { ok: true });
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual(readJson(usagePath), toUsageFileShape(usageResp(), NOW_MS + 181_000));
 });
 
 function timeoutSignalFactory() {
