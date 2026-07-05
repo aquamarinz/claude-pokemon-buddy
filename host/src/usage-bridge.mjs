@@ -36,7 +36,9 @@ const out = {
 };
 
 try {
-  writeUsageFile(OUT, out);
+  if (out.fiveHourPct != null || out.weeklyPct != null) {
+    writeUsageFile(OUT, out);
+  }
 } catch { /* never crash CC over a write failure */ }
 
 const f = out.fiveHourPct == null ? "--" : `${Math.round(out.fiveHourPct)}%`;

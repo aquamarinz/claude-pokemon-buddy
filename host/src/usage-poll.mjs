@@ -11,6 +11,7 @@ const DEFAULT_VERSION = "2.1.0";
 const OAUTH_BETA = "oauth-2025-04-20";
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 const FETCH_TIMEOUT_MS = 10_000;
+const defaultAttemptState = { lastAttemptSec: 0 };
 
 export function readOAuthToken({
   platform = process.platform,
@@ -53,8 +54,9 @@ export async function fetchUsage(
         "Content-Type": "application/json",
       },
     });
-    if (res?.status !== 200) return null;
-    return await res.json();
+    if (typeof res?.status !== "number") return null;
+    if (res.status !== 200) return { status: res.status, data: null };
+    return { status: res.status, data: await res.json() };
   } catch {
     return null;
   }
@@ -87,6 +89,7 @@ export async function pollUsageOnce({
   mkdir = mkdirSync,
   writeFile = writeFileSync,
   rename = renameSync,
+  attemptState = defaultAttemptState,
 } = {}) {
   try {
     const nowMs = typeof now === "function" ? now() : now;
@@ -94,14 +97,24 @@ export async function pollUsageOnce({
       return { ok: true, skipped: true };
     }
 
+    const nowSec = Math.floor(nowMs / 1000);
+    if (isAttemptThrottled({ attemptState, nowSec, minIntervalSec })) {
+      return { ok: true, skipped: true };
+    }
+    markAttempt(attemptState, nowSec);
+
     const token = await readOAuthTokenImpl({ platform, home, exec, readFile });
     if (!token) return { ok: false, reason: "no-token" };
 
     const resolvedVersion = version ?? ccVersionImpl({ exec });
-    const apiResp = await fetchUsageImpl(token, { version: resolvedVersion, fetchImpl, timeoutSignal });
-    if (!apiResp) return { ok: false, reason: "fetch-failed" };
+    const fetchResult = await fetchUsageImpl(token, { version: resolvedVersion, fetchImpl, timeoutSignal });
+    if (!fetchResult) return { ok: false, reason: "fetch-failed" };
+    if (fetchResult.status !== 200) {
+      const status = Number(fetchResult.status);
+      return { ok: false, reason: Number.isFinite(status) ? `http-${status}` : "fetch-failed" };
+    }
 
-    const out = toUsageFileShape(apiResp, nowMs);
+    const out = toUsageFileShape(fetchResult.data, nowMs);
     writeUsageFile(usagePath, out, { mkdir, writeFile, rename });
     return { ok: true };
   } catch {
@@ -141,6 +154,17 @@ function isThrottled({ usagePath, nowMs, minIntervalSec, readFile }) {
     return Number.isFinite(writtenAt) && Math.floor(nowMs / 1000) - writtenAt < minIntervalSec;
   } catch {
     return false;
+  }
+}
+
+function isAttemptThrottled({ attemptState, nowSec, minIntervalSec }) {
+  const lastAttemptSec = Number(attemptState?.lastAttemptSec);
+  return Number.isFinite(lastAttemptSec) && lastAttemptSec > 0 && nowSec - lastAttemptSec < minIntervalSec;
+}
+
+function markAttempt(attemptState, nowSec) {
+  if (attemptState && typeof attemptState === "object") {
+    attemptState.lastAttemptSec = nowSec;
   }
 }
 
