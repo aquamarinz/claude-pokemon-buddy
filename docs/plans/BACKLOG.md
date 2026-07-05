@@ -44,3 +44,10 @@
 - [ ] 模拟 codec 故障（如断开 ES8311 总线）→ 屏幕/按键/串口仍正常，仅无声。
 - [ ] SHTC3 测量失败路径与 USB short-write 需故障注入或长期日志观察。
 - [ ] 进化闭环实机走查：长按关怀→bond 满→KEY 进化仙子伊布；面板 choose leafeon；面板给石头→KEY 进化水伊布。
+
+## 分发/运维（2026-07-05 onboarding spec 遗留，P2）
+
+- [ ] host 崩溃自愈 supervisor / 托盘程序 / 单 exe 打包（原 spec §241 遗留）
+- [ ] 后续更新机制（agent 化 UPDATE.md：git pull + 依赖刷新 + 重启；或自动更新）
+- [ ] 网页烧录器（ESP Web Tools）作为非 Claude 用户的备选安装路径
+- [ ] R2 评审 Medium 沉淀：SETUP 各失败分支随真实案例持续扩充
