@@ -15,6 +15,7 @@
 ## 开发（owner）
 
 - host：`cd host && npm install && node src/index.js`（无板时自动 mock，输出 `out/frame.png`）
+- macOS 自启：`cd host && node scripts/autostart-macos.mjs status|install|uninstall`（写入用户 LaunchAgent，日志 `out/host.log`）
 - 测试：`cd host && node --test --test-concurrency=4`
 - 固件：ESP-IDF 项目在 `firmware/`；发布流程见 [`docs/firmware-release.md`](docs/firmware-release.md)
 - 设计文档：`docs/specs/`（自 2026-05-30 起的全部设计与增量修订）
