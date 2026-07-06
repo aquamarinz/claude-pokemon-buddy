@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { loadUsageSnapshot, normalizeUsage, usageForDisplay, hostTimeZone, ccusageEnv, runCcusage } from "../src/usage.js";
 
 const blocksJson = readFileSync(
@@ -150,14 +151,41 @@ test("loadUsageSnapshot defaults timeZone to the host IANA zone", async () => {
 
 test("ccusageEnv sets CCUSAGE_TIMEZONE only when a zone is provided", () => {
   const base = { PATH: "/usr/bin" };
+  const execPath = "/opt/homebrew/bin/node";
 
-  const withTz = ccusageEnv("Pacific/Auckland", base);
+  const withTz = ccusageEnv("Pacific/Auckland", base, execPath);
   assert.equal(withTz.CCUSAGE_TIMEZONE, "Pacific/Auckland");
-  assert.equal(withTz.PATH, "/usr/bin");
 
-  // null/absent zone -> return the base env untouched (never inject a bad zone).
-  assert.equal(ccusageEnv(null, base), base);
-  assert.equal("CCUSAGE_TIMEZONE" in ccusageEnv(null, base), false);
+  // null/absent zone -> no CCUSAGE_TIMEZONE injected (never force a bad zone).
+  assert.equal("CCUSAGE_TIMEZONE" in ccusageEnv(null, base, execPath), false);
+});
+
+test("ccusageEnv prepends the node dir to PATH regardless of timeZone", () => {
+  const d = path.delimiter;
+  const base = { PATH: `/usr/bin${d}/bin` };
+  const execPath = "/opt/homebrew/bin/node";
+
+  for (const tz of ["Pacific/Auckland", null]) {
+    const env = ccusageEnv(tz, base, execPath);
+    assert.equal(env.PATH, `/opt/homebrew/bin${d}/usr/bin${d}/bin`);
+    // existing entries preserved after the prepended dir.
+    assert.ok(env.PATH.endsWith(`/usr/bin${d}/bin`));
+  }
+});
+
+test("ccusageEnv does not duplicate the node dir when already on PATH", () => {
+  const base = { PATH: `/opt/homebrew/bin${path.delimiter}/usr/bin` };
+  const env = ccusageEnv(null, base, "/opt/homebrew/bin/node");
+  assert.equal(env.PATH, `/opt/homebrew/bin${path.delimiter}/usr/bin`);
+});
+
+test("ccusageEnv reuses a case-insensitive Path key instead of shadowing it", () => {
+  // Windows uses "Path"; the returned env must extend that same key, not add "PATH".
+  const base = { Path: "/win/system32" };
+  const env = ccusageEnv(null, base, "/win/nodejs/node");
+
+  assert.equal("PATH" in env, false);
+  assert.equal(env.Path, `/win/nodejs${path.delimiter}/win/system32`);
 });
 
 test("runCcusage passes CCUSAGE_TIMEZONE into the child env", async () => {

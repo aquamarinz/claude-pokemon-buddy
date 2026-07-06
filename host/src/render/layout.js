@@ -27,7 +27,7 @@ export function buddyBold(species) {
 }
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
-const TODAY_FONT = { weight: 700, size: 12, minSize: 12, family: MONO };
+const TODAY_FONT = { weight: 700, size: 24, minSize: 12, family: MONO };
 const BOND_SOFT_CAP = 180;
 const HEART_MAX = 5;
 
@@ -55,12 +55,12 @@ function drawLeftPanel(g, model) {
   g.fillRect(LEFT_W - 2, 0, 2, H);
 
   g.font = `800 12px ${MONO}`;
-  g.fillText("CLAUDE", 10, 23);
-  g.font = `700 12px ${MONO}`;
+  g.fillText("CLAUDE", 10, 26);
+  g.font = `700 24px ${MONO}`;
   g.textAlign = "right";
-  g.fillText(text.clock, LEFT_W - 12, 23);
+  g.fillText(text.clock, LEFT_W - 12, 28);
   g.textAlign = "left";
-  line(g, 10, 33, LEFT_W - 12, 33);
+  line(g, 10, 36, LEFT_W - 12, 36);
 
   const p5h = clampPct(model.p5h);
   const p5hText = text.p5h;
@@ -75,8 +75,8 @@ function drawLeftPanel(g, model) {
   g.fillText("5H", 151, 58);
   g.fillText("WINDOW", 151, 72);
 
-  g.font = `700 12px ${MONO}`;
-  g.fillText(text.resets5h, 11, 110);
+  g.font = `700 24px ${MONO}`;
+  g.fillText(text.resets5h, 11, 115);
 
   if (text.rateNote) {
     g.font = `700 12px ${MONO}`;
@@ -84,34 +84,34 @@ function drawLeftPanel(g, model) {
   }
 
   g.font = `800 12px ${MONO}`;
-  g.fillText("WEEK", 11, 135);
-  drawMeter(g, 56, 124, 100, 14, clampPct(model.pweek), { striped: true });
-  g.font = `800 12px ${MONO}`;
+  g.fillText("WEEK", 11, 140);
+  drawMeter(g, 56, 127, 92, 16, clampPct(model.pweek), { striped: true });
+  g.font = `800 24px ${MONO}`;
   g.textAlign = "right";
-  g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 136);
+  g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 142);
   g.textAlign = "left";
 
-  g.font = `700 12px ${MONO}`;
-  g.fillText(text.resetsWeek, 11, 155);
+  g.font = `700 24px ${MONO}`;
+  g.fillText(text.resetsWeek, 11, 167);
   g.font = fitTodayLineFont(g, text.today);
-  g.fillText(text.today, TODAY_TEXT_X, 177);
+  g.fillText(text.today, TODAY_TEXT_X, 192);
 
-  line(g, 10, 189, LEFT_W - 12, 189);
+  line(g, 10, 201, LEFT_W - 12, 201);
   // Weather: condition + temp enlarged to a secondary focal point.
   g.save();
-  g.translate(11, 192);
+  g.translate(11, 206);
   g.scale(1.35, 1.35);
   drawWeatherIcon(g, weatherIconKind(model.weather), 0, 0);
   g.restore();
   g.font = `800 24px ${CJK}`;
-  g.fillText(text.weatherMain, 56, 217);
+  g.fillText(text.weatherMain, 56, 232);
   g.font = `600 12px ${CJK}`;
-  g.fillText(text.weatherDetail, 11, 244);
+  g.fillText(text.weatherDetail, 11, 253);
 
-  line(g, 10, 258, LEFT_W - 12, 258);
+  line(g, 10, 260, LEFT_W - 12, 260);
   g.font = `700 12px ${CJK}`;
-  g.fillText(`室内  ${tempHum(model.room)}`, 11, 275);
-  g.fillText(`室外  ${tempHum(model.out)}`, 11, 292);
+  g.fillText(`室内  ${tempHum(model.room)}`, 11, 278);
+  g.fillText(`室外  ${tempHum(model.out)}`, 11, 295);
 }
 
 function drawBuddyPanel(g, model) {
@@ -398,7 +398,9 @@ function tempHum(v) {
 }
 
 function fitFont(g, text, { weight, size, minSize, family, maxWidth }) {
-  for (let px = size; px >= minSize; px -= 1) {
+  // Zpix is a 12px pixel font: only integer multiples of 12 render clean 1-bit,
+  // so step by whole grid sizes instead of single pixels.
+  for (let px = size; px >= minSize; px -= 12) {
     const font = `${weight} ${px}px ${family}`;
     g.font = font;
     if (g.measureText(text).width <= maxWidth) return font;
