@@ -27,7 +27,7 @@ test("layout text includes wind in the weather detail row", () => {
     },
   });
 
-  assert.match(text.weatherDetail, /风11/);
+  assert.match(text.weatherDetail, /风速11/);
 });
 
 test("layout text formats clock and reset ISO values", () => {
@@ -69,7 +69,7 @@ test("weather text keeps feels and wind mapped to the correct fields", () => {
 
   assert.equal(text.weatherMain, "雨 19°");
   assert.equal(text.weatherFeels, "体感17°");
-  assert.equal(text.weatherDetail, "高22°低14° 降30% 风11");
+  assert.equal(text.weatherDetail, "高22°低14° 降雨概率30% 风速11");
   assert.doesNotMatch(text.weatherMain, /风/);
 });
 
@@ -95,17 +95,24 @@ test("layout draws hearts without platform heart glyphs", () => {
   assert.doesNotMatch(source, /[♥♡]/);
 });
 
-test("today usage line fits before the left panel divider", () => {
-  const text = layoutText({
+test("today usage line renders 24px when it fits, 12px fallback when overlong", () => {
+  const g = createCanvas(400, 300).getContext("2d");
+
+  const typical = layoutText({
     todayCost: 598.35,
     todayTokens: 400_600_000,
   });
-  const g = createCanvas(400, 300).getContext("2d");
+  g.font = fitTodayLineFont(g, typical.today);
+  assert.match(g.font, /24px "Zpix"/);
+  assert.ok(g.measureText(typical.today).width <= LEFT_W - 23);
 
-  g.font = fitTodayLineFont(g, text.today);
-
+  const overlong = layoutText({
+    todayCost: 9_999_999,
+    todayTokens: 999_900_000_000,
+  });
+  g.font = fitTodayLineFont(g, overlong.today);
   assert.match(g.font, /12px "Zpix"/);
-  assert.ok(g.measureText(text.today).width <= LEFT_W - 23);
+  assert.ok(g.measureText(overlong.today).width <= LEFT_W - 23);
 });
 
 test("layout uses the registered Zpix pixel font on the 12px grid", () => {
@@ -137,10 +144,10 @@ test("layout text uses degraded labels instead of fake reset data", () => {
   assert.equal(text.pweek, "--");
   assert.equal(text.resets5h, "reset unknown");
   assert.equal(text.resetsWeek, "reset unknown");
-  assert.equal(text.today, "today $-- · -- tok");
+  assert.equal(text.today, "今日 $--·--");
   assert.match(text.weatherMain, /degraded/);
   assert.match(text.weatherMain, /--°/);
-  assert.match(text.weatherDetail, /风--/);
+  assert.match(text.weatherDetail, /风速--/);
 });
 
 test("layoutText flags stale rate-limit data via rateNote", () => {
