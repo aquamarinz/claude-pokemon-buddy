@@ -27,7 +27,9 @@ export function buddyBold(species) {
 }
 const TODAY_TEXT_X = 11;
 const TODAY_TEXT_MAX_X = LEFT_W - 12;
-const TODAY_FONT = { weight: 700, size: 24, minSize: 12, family: MONO };
+// 14px：2026-07-07 视觉伴侣选型定稿——时钟 24px、说明四行 14px 加粗。
+// 14 不是 Zpix 12px 网格的整数倍，但真机渲染实测（加粗后）足够干净，owner 拍板。
+const TODAY_FONT = { weight: 800, size: 14, minSize: 12, family: MONO };
 const BOND_SOFT_CAP = 180;
 const HEART_MAX = 5;
 
@@ -75,7 +77,7 @@ function drawLeftPanel(g, model) {
   g.fillText("5H", 151, 58);
   g.fillText("WINDOW", 151, 72);
 
-  g.font = `700 24px ${MONO}`;
+  g.font = `800 14px ${MONO}`;
   g.fillText(text.resets5h, 11, 115);
 
   if (text.rateNote) {
@@ -86,12 +88,12 @@ function drawLeftPanel(g, model) {
   g.font = `800 12px ${MONO}`;
   g.fillText("WEEK", 11, 140);
   drawMeter(g, 56, 127, 92, 16, clampPct(model.pweek), { striped: true });
-  g.font = `800 24px ${MONO}`;
+  g.font = `800 14px ${MONO}`;
   g.textAlign = "right";
   g.fillText(text.pweek === "--" ? "--" : `${text.pweek}%`, LEFT_W - 12, 142);
   g.textAlign = "left";
 
-  g.font = `700 24px ${MONO}`;
+  g.font = `800 14px ${MONO}`;
   g.fillText(text.resetsWeek, 11, 167);
   g.font = fitTodayLineFont(g, text.today);
   g.fillText(text.today, TODAY_TEXT_X, 192);
