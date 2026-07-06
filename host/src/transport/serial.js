@@ -5,6 +5,7 @@ import { SerialPort as NodeSerialPort } from "serialport";
 import { decodeFrame, encodeFrame, MAGIC, PROTO_VER, SND_COUNT, T } from "./proto.js";
 
 const ESPRESSIF_VID = "303A";
+const PORT_GUARDED = Symbol("serialPortErrorsGuarded");
 const DEFAULT_BAUD_RATE = 115200;
 const DEFAULT_TIMEOUT_MS = 250;
 const DEFAULT_MAX_RETRIES = 3;
@@ -40,6 +41,7 @@ export async function createSerialTransport({
     if (!found) return null;
 
     const sp = new SerialPort({ path: found, baudRate, autoOpen: false });
+    guardPortErrors(sp, transportOptions.logger);
     const opened = await new Promise((resolve) => {
       sp.open((error) => resolve(!error));
     });
@@ -291,6 +293,7 @@ export function makeTransport({
 
   function attachPort(nextPort) {
     detachPort();
+    guardPortErrors(nextPort, logger);
 
     const onData = (chunk) => {
       rx = append(rx, chunk);
@@ -366,13 +369,29 @@ export function makeTransport({
       reconnectTimer = null;
       resolveDisconnected();
       detachPort();
-      currentPort.close?.();
+      try {
+        currentPort.close?.();
+      } catch {
+        // A synchronous throw from close() must not kill the process on shutdown.
+      }
     },
   };
 
   function retryTimeoutFor(payloadLength) {
     return Math.max(DEFAULT_TIMEOUT_MS, timeoutMs, 150 + Math.ceil(payloadLength / 16));
   }
+}
+
+function guardPortErrors(port, logger) {
+  // The bindings-cpp Poller can emit 'error' ("Canceled") asynchronously during/after
+  // close, when the removable onError listener is already gone. A resident listener keeps
+  // the EventEmitter from throwing at the node:events top level (which would kill the
+  // process). It only logs — teardown stays the job of attachPort's removable onError.
+  if (!port || typeof port.on !== "function" || port[PORT_GUARDED]) return;
+  port[PORT_GUARDED] = true;
+  port.on("error", (error) => {
+    logger?.debug?.(`serial port error ignored during teardown: ${error?.message ?? error}`);
+  });
 }
 
 function normalizeVid(vendorId) {
