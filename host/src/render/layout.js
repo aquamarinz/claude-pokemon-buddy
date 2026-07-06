@@ -99,19 +99,19 @@ function drawLeftPanel(g, model) {
   line(g, 10, 189, LEFT_W - 12, 189);
   // Weather: condition + temp enlarged to a secondary focal point.
   g.save();
-  g.translate(11, 192);
+  g.translate(11, 197);
   g.scale(1.35, 1.35);
   drawWeatherIcon(g, weatherIconKind(model.weather), 0, 0);
   g.restore();
   g.font = `800 24px ${CJK}`;
-  g.fillText(text.weatherMain, 56, 217);
+  g.fillText(text.weatherMain, 56, 222);
   g.font = `600 12px ${CJK}`;
-  g.fillText(text.weatherDetail, 11, 244);
+  g.fillText(text.weatherDetail, 11, 249);
 
   line(g, 10, 258, LEFT_W - 12, 258);
   g.font = `700 12px ${CJK}`;
-  g.fillText(`室内  ${tempHum(model.room)}`, 11, 275);
-  g.fillText(`室外  ${tempHum(model.out)}`, 11, 292);
+  g.fillText(`室内  ${tempHum(model.room)}`, 11, 278);
+  g.fillText(`室外  ${tempHum(model.out)}`, 11, 295);
 }
 
 function drawBuddyPanel(g, model) {

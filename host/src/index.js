@@ -549,7 +549,9 @@ function collectStandaloneButtonSnapshot(transport) {
 
 export async function runOnboardingGate({
   statePath,
-  today = localYmd(new Date()),
+  // 孵化日必须是 onboarding 真正完成的那天：设备可能几天/几周后才接入，
+  // 进程启动时求值会把陈旧日期写进 lastSettled，首次结算即虚增 streak/衰减 bond。
+  todayProvider = () => localYmd(new Date()),
   onboarding,             // 注入：() => Promise<{species,name}>（真实由 transport io 驱动）
   tutorial = async () => {}, // 注入：() => Promise<void>；诞生落档后播放
   personalityRng = Math.random,
@@ -560,6 +562,7 @@ export async function runOnboardingGate({
     return existing;
   }
   const { species, name } = await onboarding();
+  const today = todayProvider(); // onboarding 完成后才定孵化日
   mkdirSync(dirname(statePath), { recursive: true });
   // 诞生即落档（tutorialDone:false）→ 教程中断电也不会重孵化
   const newborn = { ...makeNewborn(species, name, today, personalityRng), tutorialDone: false };

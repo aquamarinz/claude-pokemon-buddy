@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 export async function loadUsageSnapshot({ run = runCcusage, today = localYmd(new Date()), timeZone = hostTimeZone() } = {}) {
   try {
@@ -161,12 +162,29 @@ export function hostTimeZone() {
   }
 }
 
-// Child env with CCUSAGE_TIMEZONE set to the host zone. Using the env var (not the
-// --timezone flag) is backward-safe: an old ccusage silently ignores an unknown env
-// (degrades to status-quo UTC bucketing) whereas an unknown flag would exit non-zero
-// and wedge usage. When timeZone is null we leave process.env untouched.
-export function ccusageEnv(timeZone, baseEnv = process.env) {
-  return timeZone ? { ...baseEnv, CCUSAGE_TIMEZONE: timeZone } : baseEnv;
+// Child env for the ccusage npx spawn. Two jobs:
+//  1. Guarantee npx is on PATH. Under macOS launchd the host inherits a bare PATH
+//     without /opt/homebrew/bin, so spawn("npx", ...) fails ENOENT forever and the
+//     device shows "today $-- · -- tok" with no EXP. npx always lives next to the
+//     node binary (dirname(process.execPath)), so we prepend that dir to PATH —
+//     making the child self-sufficient regardless of the inherited PATH.
+//  2. Set CCUSAGE_TIMEZONE to the host zone (only when provided). Using the env var
+//     (not the --timezone flag) is backward-safe: an old ccusage silently ignores an
+//     unknown env (degrades to status-quo UTC bucketing) whereas an unknown flag
+//     would exit non-zero and wedge usage. When timeZone is null we leave it unset.
+export function ccusageEnv(timeZone, baseEnv = process.env, execPath = process.execPath) {
+  const env = { ...baseEnv };
+  if (timeZone) env.CCUSAGE_TIMEZONE = timeZone;
+
+  // Windows env keys are case-insensitive ("Path" vs "PATH"); reuse the existing key
+  // so we extend rather than shadow it.
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const nodeDir = path.dirname(execPath);
+  const entries = (env[pathKey] ?? "").split(path.delimiter).filter(Boolean);
+  if (!entries.includes(nodeDir)) {
+    env[pathKey] = [nodeDir, ...entries].join(path.delimiter);
+  }
+  return env;
 }
 
 function localYmd(date) {
