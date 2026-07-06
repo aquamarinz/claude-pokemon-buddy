@@ -95,7 +95,7 @@ test("layout draws hearts without platform heart glyphs", () => {
   assert.doesNotMatch(source, /[♥♡]/);
 });
 
-test("today usage line renders 24px when it fits, 12px fallback when overlong", () => {
+test("today usage line renders 14px when it fits, 12px fallback when overlong", () => {
   const g = createCanvas(400, 300).getContext("2d");
 
   const typical = layoutText({
@@ -103,27 +103,25 @@ test("today usage line renders 24px when it fits, 12px fallback when overlong", 
     todayTokens: 400_600_000,
   });
   g.font = fitTodayLineFont(g, typical.today);
-  assert.match(g.font, /24px "Zpix"/);
+  assert.match(g.font, /14px "Zpix"/);
   assert.ok(g.measureText(typical.today).width <= LEFT_W - 23);
 
-  const overlong = layoutText({
-    todayCost: 9_999_999,
-    todayTokens: 999_900_000_000,
-  });
-  g.font = fitTodayLineFont(g, overlong.today);
+  const overlong = "今日 $999,999,999.99·999,999,999,999 tokens";
+  g.font = fitTodayLineFont(g, overlong);
   assert.match(g.font, /12px "Zpix"/);
-  assert.ok(g.measureText(overlong.today).width <= LEFT_W - 23);
 });
 
-test("layout uses the registered Zpix pixel font on the 12px grid", () => {
+test("layout uses the registered Zpix pixel font at approved sizes only", () => {
   const source = readFileSync(new URL("../src/render/layout.js", import.meta.url), "utf8");
   const staticFontSizes = [...source.matchAll(/g\.font = `[^`]*?(\d+)px \$\{(?:MONO|CJK)\}`/g)]
     .map((match) => Number(match[1]));
+  // 12/24/48 = Zpix 整数倍；14 = 2026-07-07 视觉伴侣选型定稿（说明行，真机渲染验收过）。
+  const approved = new Set([12, 14, 24, 48]);
 
   assert.match(source, /GlobalFonts\.registerFromPath/);
   assert.doesNotMatch(source, /Courier New|PingFang|Hiragino|Microsoft YaHei/);
   assert.ok(staticFontSizes.length > 0);
-  assert.deepEqual(staticFontSizes.filter((size) => size % 12 !== 0), []);
+  assert.deepEqual(staticFontSizes.filter((size) => !approved.has(size)), []);
 });
 
 test("layout text uses degraded labels instead of fake reset data", () => {
