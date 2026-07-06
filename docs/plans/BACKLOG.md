@@ -52,3 +52,9 @@
 - [ ] 网页烧录器（ESP Web Tools）作为非 Claude 用户的备选安装路径
 - [ ] R2 评审 Medium 沉淀：SETUP 各失败分支随真实案例持续扩充
 - [ ] 桌面版 Claude Code 不触发 statusLine（2026-07-06 实测；终端版正常且 schema 未变）——仅影响 bridge 辅路，poll 主路不受影响；若未来 poll 端点失效需重估
+
+### 自启脚本（autostart-macos，2026-07-06 审查沉淀）
+
+- **AS-1（Low）** plist 烧入 worktree 路径：从 `.claude/worktrees/` 下执行 `install` 会把临时路径写进 plist（`ProgramArguments`/`WorkingDirectory`/日志路径），worktree 删除后自启断（指向已删目录）。install 检测到 `HOST_DIR` 含 `.claude/worktrees` 时应警告或拒绝，引导用户从主仓库执行。
+- **AS-2（Low）** symlink 方式调用时入口守卫失效：`process.argv[1] === SCRIPT_PATH` 未对 `argv[1]` 做 realpath 解析（`SCRIPT_PATH` 已 `fileURLToPath`），经软链启动时两侧不等 → 脚本静默退出 0 不执行。改为双侧 `realpathSync` 后比较。
+- **AS-3（Medium）** `findManualHostPids`/`install`/`uninstall` 的 `runCommand` 未注入化，导致「install 拒绝路径（发现手动实例/bootout 未落定）」与 `uninstall` 的 `isMissingService` 容错分支缺进程级单测。重构为可注入 runner（依赖倒置）后补齐这些真分支的单测覆盖，避免只测纯函数。
