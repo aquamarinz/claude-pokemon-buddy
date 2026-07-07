@@ -74,13 +74,14 @@ function tokens(v) {
   return String(Math.round(n));
 }
 
-// Compact tokens for the 24px today line: drop the decimal once >= 100 of a
-// unit ("400.6M" -> "401M") so realistic heavy days still fit the panel width.
+// Compact tokens for the today line: keep exactly one decimal in every
+// K/M/B/T bucket so readings stay consistent (no "45.3M" vs "401M" flip).
+// Width verified to fit the 14px panel.
 function tokensShort(v) {
   if (v == null) return "--";
   const n = Number(v);
   if (!Number.isFinite(n)) return "--";
-  const scaled = (x) => (x >= 100 ? String(Math.round(x)) : x.toFixed(1));
+  const scaled = (x) => x.toFixed(1);
   if (Math.abs(n) >= 1_000_000_000_000) return `${scaled(n / 1_000_000_000_000)}T`;
   if (Math.abs(n) >= 1_000_000_000) return `${scaled(n / 1_000_000_000)}B`;
   if (n >= 1_000_000) return `${scaled(n / 1_000_000)}M`;

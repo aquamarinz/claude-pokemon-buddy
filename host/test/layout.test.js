@@ -111,6 +111,21 @@ test("today usage line renders 14px when it fits, 12px fallback when overlong", 
   assert.match(g.font, /12px "Zpix"/);
 });
 
+test("today line keeps one decimal in every compact token bucket", () => {
+  assert.equal(
+    layoutText({ todayCost: 598.35, todayTokens: 400_600_000 }).today,
+    "今日 $598·400.6M",
+  );
+  assert.equal(
+    layoutText({ todayCost: 12, todayTokens: 453_200 }).today,
+    "今日 $12·453.2K",
+  );
+  assert.equal(
+    layoutText({ todayCost: 12, todayTokens: 1_234_000_000 }).today,
+    "今日 $12·1.2B",
+  );
+});
+
 test("layout uses the registered Zpix pixel font at approved sizes only", () => {
   const source = readFileSync(new URL("../src/render/layout.js", import.meta.url), "utf8");
   const staticFontSizes = [...source.matchAll(/g\.font = `[^`]*?(\d+)px \$\{(?:MONO|CJK)\}`/g)]
