@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { decodeFrame, encodeFrame, MAGIC, T } from "../src/transport/proto.js";
-import { findEspPort, makeTransport } from "../src/transport/serial.js";
+import { createSerialTransport, findEspPort, makeTransport } from "../src/transport/serial.js";
 
 test("findEspPort returns first serial path with Espressif VID 303A", async () => {
   const SerialPort = {
@@ -561,6 +561,111 @@ test("a deferred write error from an old port does not disconnect the reconnecte
   transport.close();
 });
 
+test("close() survives a Poller 'error' emitted asynchronously by port.close (SIGTERM path)", async () => {
+  const port = new FakePort();
+  port.close = function close() {
+    this.closed = true;
+    // mimic @serialport/bindings-cpp Poller emitting after the removable listener is gone
+    setImmediate(() => this.emit("error", new Error("Canceled")));
+  };
+  const transport = makeTransport({ port });
+
+  transport.close(); // must not throw synchronously
+  // the resident guard listener is never removed by detachPort
+  assert.ok(port.listenerCount("error") >= 1);
+
+  // the async Poller emission must not throw at node:events top level (would kill the process)
+  await tick();
+  await tick();
+  assert.equal(port.closed, true);
+});
+
+test("a second 'error' after disconnect does not throw (post-detach)", async () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port, openPort: async () => null, reconnectDelayMs: 5 });
+
+  port.emitError(); // first error -> handleDisconnect removes the removable onError
+  assert.ok(port.listenerCount("error") >= 1); // resident guard remains
+
+  // a SECOND error on the now-detached old port must be swallowed by the resident guard
+  port.emitError(new Error("Canceled"));
+  await tick();
+  transport.close();
+});
+
+test("'error' while connected still triggers the disconnect path (regression guard)", async () => {
+  const port = new FakePort();
+  const transport = makeTransport({ port, maxRetries: 0 });
+
+  const result = transport.pushFrame(Uint8Array.from([9]));
+  assert.equal(port.writes.length, 1);
+  port.emitError(new Error("Canceled"));
+
+  assert.deepEqual(await withTimeout(result, 20), { ok: false, disconnected: true });
+});
+
+test("createSerialTransport probe failure: async 'error' from close() does not throw", async () => {
+  const created = [];
+  class FakeSerialPort extends FakePort {
+    constructor(options) {
+      super();
+      this.options = options;
+      created.push(this);
+    }
+    open(callback) {
+      callback(new Error("open failed"));
+    }
+    close() {
+      this.closed = true;
+      setImmediate(() => this.emit("error", new Error("Canceled")));
+    }
+    static async list() {
+      return [{ path: "/dev/cu.usbmodem-probe", vendorId: "303A" }];
+    }
+  }
+
+  const transport = await createSerialTransport({
+    SerialPort: FakeSerialPort,
+    path: "/dev/cu.usbmodem-probe",
+  });
+
+  assert.equal(transport, null); // open failed -> probe returns null
+  assert.equal(created.length, 1);
+  assert.ok(created[0].listenerCount("error") >= 1); // guarded right after construction
+
+  await tick();
+  await tick();
+  assert.equal(created[0].closed, true);
+});
+
+test("close() swallows a synchronous throw from port.close (SIGTERM path)", () => {
+  const port = new FakePort();
+  port.close = () => { throw new Error("EBADF"); };
+  const transport = makeTransport({ port });
+
+  // A synchronous throw from close() must not escape close().
+  assert.doesNotThrow(() => transport.close());
+});
+
+test("tryReconnect stopped-path swallows a synchronous throw from close() (SIGTERM race)", async () => {
+  let resolveOpen;
+  const gate = new Promise((r) => { resolveOpen = r; });
+  let badClosed = false;
+  const badPort = new FakePort();
+  badPort.close = () => { badClosed = true; throw new Error("EBADF"); };
+  const first = new FakePort();
+  const transport = makeTransport({ port: first, openPort: () => gate, reconnectDelayMs: 1 });
+
+  first.emitError();          // disconnect -> schedules reconnect
+  await sleep(5);             // reconnect timer fires -> tryReconnect now awaiting gate
+  transport.close();          // stopped = true
+  resolveOpen(badPort);       // openPort resolves; tryReconnect hits `if (stopped)` -> badPort.close() throws
+  await tick();               // must NOT surface an unhandled rejection
+  await tick();
+
+  assert.equal(badClosed, true); // the stopped-path close() was reached
+});
+
 class FakePort extends EventEmitter {
   writes = [];
   closed = false;
@@ -595,6 +700,10 @@ function sensorPayload(tempTenths, humidity) {
   view.setInt16(0, tempTenths, true);
   payload[2] = humidity;
   return payload;
+}
+
+function tick() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function sleep(ms) {
