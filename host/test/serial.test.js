@@ -638,6 +638,34 @@ test("createSerialTransport probe failure: async 'error' from close() does not t
   assert.equal(created[0].closed, true);
 });
 
+test("close() swallows a synchronous throw from port.close (SIGTERM path)", () => {
+  const port = new FakePort();
+  port.close = () => { throw new Error("EBADF"); };
+  const transport = makeTransport({ port });
+
+  // A synchronous throw from close() must not escape close().
+  assert.doesNotThrow(() => transport.close());
+});
+
+test("tryReconnect stopped-path swallows a synchronous throw from close() (SIGTERM race)", async () => {
+  let resolveOpen;
+  const gate = new Promise((r) => { resolveOpen = r; });
+  let badClosed = false;
+  const badPort = new FakePort();
+  badPort.close = () => { badClosed = true; throw new Error("EBADF"); };
+  const first = new FakePort();
+  const transport = makeTransport({ port: first, openPort: () => gate, reconnectDelayMs: 1 });
+
+  first.emitError();          // disconnect -> schedules reconnect
+  await sleep(5);             // reconnect timer fires -> tryReconnect now awaiting gate
+  transport.close();          // stopped = true
+  resolveOpen(badPort);       // openPort resolves; tryReconnect hits `if (stopped)` -> badPort.close() throws
+  await tick();               // must NOT surface an unhandled rejection
+  await tick();
+
+  assert.equal(badClosed, true); // the stopped-path close() was reached
+});
+
 class FakePort extends EventEmitter {
   writes = [];
   closed = false;

@@ -275,7 +275,11 @@ export function makeTransport({
     }
 
     if (stopped) {
-      nextPort?.close?.();
+      try {
+        nextPort?.close?.();
+      } catch {
+        // A synchronous throw from close() must not escape as an unhandled rejection on shutdown.
+      }
       return;
     }
 
